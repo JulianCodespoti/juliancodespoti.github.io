@@ -6,8 +6,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@kit": ["src/kit/index.ts"],
-      "@kit/*": ["src/kit/*"]
+      "@engine": ["src/engine/index.ts"],
+      "@engine/*": ["src/engine/*"]
     }
   }
 }

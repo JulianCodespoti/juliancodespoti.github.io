@@ -7,7 +7,7 @@ export async function GET(context: APIContext) {
     (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
   );
   return rss({
-    title: "Julian Codespoti — Interactive Systems Essays",
+    title: "Julian Codespoti - Interactive Systems Essays",
     description: "Interactive engineering deep-dives on Rust, Android internals, protocols, and local-first tools.",
     site: context.site ?? "https://juliancodespoti.github.io",
     items: essays.map((essay) => ({

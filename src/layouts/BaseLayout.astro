@@ -41,31 +41,16 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
     <header class="site-header">
       <div class="site-header-inner">
         <a class="site-brand" href="/">
-          <span class="brand-tiles" aria-hidden="true">
-            <span style="background: var(--amber)"></span>
-            <span style="background: var(--green)"></span>
-            <span style="background: var(--blue)"></span>
-            <span style="background: var(--control-hover)"></span>
-          </span>
+          <img src="/favicon.svg" alt="" width="24" height="24" style="display:block;border-radius:5px;" />
           <span>Julian Codespoti</span>
         </a>
         <nav class="site-nav" aria-label="Primary">
           <a href="/" aria-current={activeNav === "essays" ? "page" : undefined}>Essays</a>
-          <a href="/framework/" aria-current={activeNav === "framework" ? "page" : undefined}>Kit</a>
+          <a href="/framework/" aria-current={activeNav === "framework" ? "page" : undefined}>Engine</a>
           <a href="https://github.com/JulianCodespoti" target="_blank" rel="noopener noreferrer">GitHub</a>
-          <div class="theme-switch" role="group" aria-label="Theme">
-            <button type="button" id="theme-light" aria-label="Light theme" aria-pressed="false">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <circle cx="12" cy="12" r="4" />
-                <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
-              </svg>
-            </button>
-            <button type="button" id="theme-dark" aria-label="Dark theme" aria-pressed="true">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
-              </svg>
-            </button>
-          </div>
+          <button type="button" class="theme-pill" id="theme-toggle" aria-label="Switch color theme">
+            <span id="theme-label">Dark</span>
+          </button>
         </nav>
       </div>
     </header>
@@ -77,7 +62,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
         <span>Julian Codespoti</span>
         <div style="display: flex; gap: 1rem;">
           <a href="/">Essays</a>
-          <a href="/framework/">Kit</a>
+          <a href="/framework/">Engine</a>
           <a href="https://github.com/JulianCodespoti" target="_blank" rel="noopener noreferrer">GitHub</a>
           <a href="/rss.xml">RSS</a>
         </div>
@@ -86,20 +71,18 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
 
     <script is:inline>
       (() => {
-        const lightBtn = document.getElementById("theme-light");
-        const darkBtn = document.getElementById("theme-dark");
+        const btn = document.getElementById("theme-toggle");
+        const lbl = document.getElementById("theme-label");
         const sync = () => {
           const isLight = document.documentElement.dataset.theme === "light";
-          lightBtn?.setAttribute("aria-pressed", String(isLight));
-          darkBtn?.setAttribute("aria-pressed", String(!isLight));
+          if (lbl) lbl.textContent = isLight ? "Light" : "Dark";
         };
-        const setTheme = (t) => {
-          document.documentElement.dataset.theme = t;
-          try { localStorage.setItem("jc-theme", t); } catch {}
+        btn?.addEventListener("click", () => {
+          const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
+          document.documentElement.dataset.theme = next;
+          try { localStorage.setItem("jc-theme", next); } catch {}
           sync();
-        };
-        lightBtn?.addEventListener("click", () => setTheme("light"));
-        darkBtn?.addEventListener("click", () => setTheme("dark"));
+        });
         sync();
       })();
     </script>

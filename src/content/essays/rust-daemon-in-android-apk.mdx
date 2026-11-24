@@ -10,12 +10,12 @@ repoUrl: "https://github.com/JulianCodespoti/omp-pulse"
 featured: true
 ---
 
-import { Legend } from "../../kit";
-import { PageGridDiagram } from "../../sims/android-rust-daemon/PageGridDiagram";
-import { DeltaStripDiagram } from "../../sims/android-rust-daemon/DeltaStripDiagram";
-import { QueueLatchDiagram } from "../../sims/android-rust-daemon/QueueLatchDiagram";
-import { PushEnvelopeDiagram } from "../../sims/android-rust-daemon/PushEnvelopeDiagram";
-import { WriterClashDiagram } from "../../sims/android-rust-daemon/WriterClashDiagram";
+import { Term } from "../../engine";
+import { PageAlignmentScene } from "../../sims/android-rust-daemon/PageAlignmentScene";
+import { StreamWireScene } from "../../sims/android-rust-daemon/StreamWireScene";
+import { BackpressureValveScene } from "../../sims/android-rust-daemon/BackpressureValveScene";
+import { PushCipherScene } from "../../sims/android-rust-daemon/PushCipherScene";
+import { SingleWriterScene } from "../../sims/android-rust-daemon/SingleWriterScene";
 
 My brother and I built [OMP Pulse](https://github.com/JulianCodespoti/omp-pulse) because driving a terminal coding agent over SSH on a phone screen is miserable. It is a single Rust (`tokio` / `axum`) binary that embeds its React client with `include_dir!`, connects to desktop `omp` sessions over Tailscale, and cross-compiles to `aarch64-unknown-linux-musl` so the same daemon can run inside an unrooted Android APK when your laptop is shut.
 
@@ -27,13 +27,11 @@ On Android `targetSdk >= 29`, SELinux blocks `execve()` from an app's writable d
 
 So we compile the daemon statically for `aarch64-unknown-linux-musl` (`-C target-feature=+crt-static -C relocation-model=static`), name it `libomppulse.so`, and bind-mount `nativeLibraryDir` at `/opt/pulse` inside `proot`.
 
-That works on Android 7 through 14. On Android 15 devices with **16 KB kernel pages**, an older 4 KB-aligned binary fails to map. Each small square below is 4 KB of virtual memory. On a 16 KB kernel, four squares share one hardware page, and the kernel refuses to put <Legend color="amber">executable code</Legend> and <Legend color="blue">writable data</Legend> on the same page.
+That works on Android 7 through 14. On Android 15 devices with **16 KB kernel pages**, an older 4 KB-aligned binary fails to map because the loader refuses to put <Term tone="copper">executable code</Term> and <Term tone="teal">writable data</Term> inside the same hardware page. Switch the alignment below to watch `.data` clear the page boundary.
 
-Drag the slider right to increase ELF segment alignment (`p_align`) and watch the conflict disappear.
+<PageAlignmentScene client:visible />
 
-<PageGridDiagram client:visible />
-
-Because a bad binary still packages cleanly into an APK and only crashes on a user's phone, our build script (`scripts/android/build-runtime.sh`) parses the ELF header in Node before Gradle runs:
+Because a bad binary still packages cleanly into an APK and only crashes on a user's phone, `scripts/android/build-runtime.sh` parses the ELF header in Node before Gradle runs:
 
 ```js
 if (b.readUInt16LE(18) !== 183) fail("not AArch64");
@@ -52,19 +50,17 @@ One extra build trap: the desktop binary embeds `public/app-release.apk` so phon
 
 ## 2. Wire bloat and the queue that oscillated 123 times
 
-Sending the full assistant message on every streaming token was easy to write and terrible on cellular. On a measured 4,228-character reply, naive <Legend color="amber">full snapshots</Legend> sent **244,174 bytes** (`57.8x` amplification). Sending <Legend color="green">prefix deltas</Legend> tagged with a `base_seq` cut the exact same turn to **25,290 bytes** (`9.7x` smaller).
+Sending the full assistant message on every streaming token was easy to write and terrible on cellular. On a measured 4,228-character reply, naive <Term tone="copper">full snapshots</Term> sent **244,174 bytes** (`57.8x` amplification). Sending <Term tone="sage">prefix deltas</Term> tagged with a `base_seq` cut the exact same turn to **25,290 bytes** (`9.7x` smaller).
 
-Drag the slider to compare how quickly snapshots pile up against deltas.
-
-<DeltaStripDiagram client:visible />
+<StreamWireScene client:visible />
 
 Two details mattered in practice. First, `omp` normalizes trailing whitespace as a block finishes, so append-only diffs failed on 5 of 33 updates; sending `(keep, append)` suffix replacements fixed that. Second, `keep` counts UTF-16 code units rather than UTF-8 bytes so `String.prototype.slice` in the browser never splits an emoji.
 
 The harder bug was back-pressure. A phone in a tunnel stops draining its WebSocket while a build log appends 150 MiB to the session file. Our first fix put a cap on the per-client queue: past the limit, clear the queue and push one tiny `resync` frame so the phone refetches over compressed HTTP.
 
-In our slow-consumer benchmark, that queue **oscillated 123 times** and still spiked daemon RSS by **+321 MiB**. Clearing the queue down to one 200-byte <Legend color="red">resync frame</Legend> immediately restored headroom, so the file watcher kept reading and overflowing again. Adding a <Legend color="green">stall latch</Legend> holds the gate shut until the client drains, dropping the 150 MiB burst to **+0 MiB** RSS.
+In our slow-consumer benchmark, that queue **oscillated 123 times** and still spiked daemon RSS by **+321 MiB**. Clearing the queue down to one 200-byte <Term tone="crimson">resync frame</Term> immediately restored headroom, so the file watcher kept reading and overflowing again. Adding a <Term tone="sage">stall latch</Term> closes the intake valve until the client drains, dropping the 150 MiB burst to **+0 MiB** RSS.
 
-<QueueLatchDiagram client:visible />
+<BackpressureValveScene client:visible />
 
 We applied the same rule to locked phones. A backgrounded PWA keeps its WebSocket open, so checking whether *any* socket is connected kept the 250 ms watcher running in your pocket. Now `WsHub::has_audience()` counts only visible clients with queue headroom; when nobody is looking, the watcher parks and queues one resync for when the screen wakes.
 
@@ -72,21 +68,19 @@ We applied the same rule to locked phones. A backgrounded PWA keeps its WebSocke
 
 We did not want a cloud relay or Firebase SDK, so the daemon encrypts and signs Web Push notifications itself. Most Web Push crates pull in `openssl-sys`, which makes cross-compiling across Linux musl, macOS, Windows MSVC, and Android arm64 painful.
 
-RFC 8291 (`aes128gcm`) plus VAPID ES256 signing is only a few hundred lines of Rust on top of `p256`, `hkdf`, `sha2`, and `aes-gcm`. The push server receives a <Legend color="blue">ephemeral P-256 key</Legend> and an <Legend color="amber">encrypted payload</Legend> it cannot read; only the phone's private key turns it back into <Legend color="green">your notification</Legend>.
+RFC 8291 (`aes128gcm`) plus VAPID ES256 signing is only a few hundred lines of Rust on top of `p256`, `hkdf`, `sha2`, and `aes-gcm`. Hit **Send push** below to watch your <Term tone="sage">notification</Term> lock into <Term tone="copper">encrypted bytes</Term> before it ever reaches Google, Apple, or Mozilla's push relay.
 
-Type a message below and flip the switch to see what Google, Apple, or Mozilla's push relay receives compared to your phone.
-
-<PushEnvelopeDiagram client:visible />
+<PushCipherScene client:visible />
 
 With zero C crypto dependencies in the tree, `cargo zigbuild --release --target aarch64-unknown-linux-musl` finishes in about 20 seconds on any machine.
 
 ## 4. Two writers destroy a rewritten JSONL file
 
-`omp` keeps each conversation in a JSONL file, and it rewrites that file wholesale from memory. If a desktop terminal holds <Legend color="amber">its turns in RAM</Legend> while the phone spawns a second writer and appends <Legend color="blue">a new turn directly to disk</Legend>, the next desktop write silently wipes out the phone's work.
+`omp` keeps each conversation in a JSONL file, and it rewrites that file wholesale from memory. If a desktop terminal holds <Term tone="copper">its turns in RAM</Term> while the phone spawns a second writer and writes <Term tone="teal">a new turn directly to disk</Term>, the next desktop flush silently wipes out the phone's work.
 
-Step through the timeline below in **Two writers** mode, then switch to **Single writer**.
+Hit **Play** in **Two writers** mode, then switch to **Single writer**.
 
-<WriterClashDiagram client:visible />
+<SingleWriterScene client:visible />
 
 To prevent that, the daemon checks three ownership layers before spawning a writer: a sidecar lock file (all platforms), `sysinfo` process arguments, and open file descriptors (`/proc` on Linux, `libproc` on macOS). When a desktop process owns the file, Pulse routes phone prompts through the desktop extension so there is still only one writer on disk. If no live link exists, it refuses rather than guessing.
 
