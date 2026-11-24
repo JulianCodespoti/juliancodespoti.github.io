@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "astro dev",
-    "build": "astro build",
+    "gen:og": "node scripts/gen-og.mjs",
+    "build": "npm run gen:og && astro build",
     "preview": "astro preview",
     "check": "astro check",
     "test": "vitest run",
@@ -17,8 +18,10 @@
     "@astrojs/mdx": "^4.2.5",
     "@astrojs/react": "^4.2.4",
     "@astrojs/rss": "^4.0.11",
+    "@astrojs/sitemap": "^3.7.6",
     "@fontsource/ibm-plex-mono": "^5.3.0",
     "@fontsource/ibm-plex-sans": "^5.3.0",
+    "@fontsource/newsreader": "^5.3.0",
     "astro": "^5.7.10",
     "lucide-react": "^0.511.0",
     "motion": "^14.14.0",
@@ -27,8 +30,10 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.4",
+    "@resvg/resvg-js": "^2.6.2",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.2",
+    "satori": "^0.63.2",
     "typescript": "^5.8.3",
     "vitest": "^5.1.1"
   }

@@ -1,18 +1,37 @@
 ---
+import "@fontsource/newsreader/400.css";
+import "@fontsource/newsreader/500.css";
+import "@fontsource/newsreader/600.css";
+import "@fontsource/newsreader/400-italic.css";
 import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
 import "../styles/global.css";
+import { SITE } from "../site.config";
 
 interface Props {
   title: string;
   description: string;
-  activeNav?: "posts";
+  activeNav?: "posts" | "about";
+  ogImage?: string;
+  ogType?: "website" | "article";
+  publishedTime?: string;
+  jsonLd?: Record<string, unknown>;
 }
 
-const { title, description, activeNav = "posts" } = Astro.props;
-const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
+const {
+  title,
+  description,
+  activeNav,
+  ogImage = "/og/home.png",
+  ogType = "website",
+  publishedTime,
+  jsonLd,
+} = Astro.props;
+
+const canonicalUrl = new URL(Astro.url.pathname, Astro.site ?? SITE.siteUrl);
+const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.siteUrl);
 ---
 
 <!doctype html>
@@ -24,12 +43,32 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
     <meta name="description" content={description} />
     <link rel="canonical" href={canonicalUrl} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <link rel="alternate" type="application/rss+xml" title="Julian Codespoti" href="/rss.xml" />
+    <link rel="alternate" type="application/rss+xml" title={SITE.brand} href="/rss.xml" />
+    <link rel="sitemap" href="/sitemap-index.xml" />
+
+    <!-- Open Graph -->
+    <meta property="og:site_name" content={SITE.brand} />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:type" content={ogType} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta property="og:image" content={ogImageUrl} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    {publishedTime && <meta property="article:published_time" content={publishedTime} />}
+
+    <!-- Twitter / X -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageUrl} />
+
+    {jsonLd && <script type="application/ld+json" set:html={JSON.stringify(jsonLd)} />}
 
     <script is:inline>
       (() => {
         try {
-          const saved = localStorage.getItem("jc-theme");
+          const saved = localStorage.getItem("spoti-theme");
           if (saved === "light" || saved === "dark") {
             document.documentElement.dataset.theme = saved;
           }
@@ -40,13 +79,19 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
   <body>
     <header class="site-header">
       <div class="site-header-inner">
-        <a class="site-brand" href="/">
-          <img src="/favicon.svg" alt="" width="24" height="24" style="display:block;border-radius:5px;" />
-          <span>Julian Codespoti</span>
+        <a class="site-brand" href="/" aria-label={`${SITE.brand} home`}>
+          <svg class="brand-mark" width="24" height="24" viewBox="0 0 64 64" fill="none" aria-hidden="true">
+            <rect width="64" height="64" rx="14" fill="var(--stage-sub)" stroke="var(--line-strong)" stroke-width="2" />
+            <path d="M23 18H16V46H23" stroke="var(--fg)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" />
+            <path d="M41 18H48V46H41" stroke="var(--fg)" stroke-width="4.2" stroke-linecap="round" stroke-linejoin="round" />
+            <line class="brand-slash" x1="36" y1="16" x2="28" y2="48" stroke="var(--copper)" stroke-width="4.5" stroke-linecap="round" />
+          </svg>
+          <span class="brand-wordmark">{SITE.brand}</span>
         </a>
         <nav class="site-nav" aria-label="Primary">
           <a href="/" aria-current={activeNav === "posts" ? "page" : undefined}>Posts</a>
-          <a href="https://github.com/JulianCodespoti" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="/about/" aria-current={activeNav === "about" ? "page" : undefined}>About</a>
+          <a href={SITE.githubUrl} target="_blank" rel="noopener noreferrer">GitHub</a>
           <button type="button" class="theme-pill" id="theme-toggle" aria-label="Switch color theme">
             <span id="theme-label">Dark</span>
           </button>
@@ -58,10 +103,11 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
 
     <footer class="site-footer">
       <div class="site-footer-inner">
-        <span>Julian Codespoti</span>
-        <div style="display: flex; gap: 1rem;">
+        <span class="footer-brand">{SITE.brand}</span>
+        <div class="footer-links">
           <a href="/">Posts</a>
-          <a href="https://github.com/JulianCodespoti" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="/about/">About</a>
+          <a href={SITE.githubUrl} target="_blank" rel="noopener noreferrer">GitHub</a>
           <a href="/rss.xml">RSS</a>
         </div>
       </div>
@@ -78,7 +124,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
         btn?.addEventListener("click", () => {
           const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
           document.documentElement.dataset.theme = next;
-          try { localStorage.setItem("jc-theme", next); } catch {}
+          try { localStorage.setItem("spoti-theme", next); } catch {}
           sync();
         });
         sync();

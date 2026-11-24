@@ -1,0 +1,18 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+import { NotFoundToy } from "../components/NotFoundToy";
+import { SITE } from "../site.config";
+---
+
+<BaseLayout
+  title={`404 - ${SITE.brand}`}
+  description="Route not found."
+>
+  <main class="col-page">
+    <h1 class="page-title">Route not found</h1>
+    <p class="page-sub">
+      Nothing is listening at this path. Click the wire below or head back to <a href="/">the home page</a>.
+    </p>
+    <NotFoundToy client:load />
+  </main>
+</BaseLayout>

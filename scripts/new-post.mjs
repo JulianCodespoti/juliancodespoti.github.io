@@ -59,6 +59,31 @@ describe("${slug} model", () => {
 );
 
 fs.writeFileSync(
+  path.join(figDir, "Preview.tsx"),
+  `import { useRef } from "react";
+import { CanvasStage, fillRoundRect } from "../../runtime";
+import { createDemoState, stepDemo } from "./model";
+
+export function Preview() {
+  const simRef = useRef(createDemoState());
+  return (
+    <CanvasStage
+      height={104}
+      framed={false}
+      label="Miniature preview for ${title}"
+      onFrame={({ ctx, width, height, dt, theme }) => {
+        stepDemo(simRef.current, dt);
+        ctx.clearRect(0, 0, width, height);
+        const x = 16 + simRef.current.progress * (width - 52);
+        fillRoundRect(ctx, x, height / 2 - 10, 20, 20, 5, theme.copper);
+      }}
+    />
+  );
+}
+`,
+);
+
+fs.writeFileSync(
   path.join(figDir, "Figures.tsx"),
   `import { useRef, useState } from "react";
 import { CanvasStage, fillRoundRect } from "../../runtime";
@@ -110,6 +135,7 @@ pubDate: ${today}
 readingTime: "6 min read"
 simsCount: 1
 tags: ["Systems"]
+preview: "${slug}"
 draft: true
 ---
 
@@ -126,4 +152,5 @@ console.log(`Scaffolded post "${slug}":`);
 console.log(`  - src/content/posts/${slug}.mdx`);
 console.log(`  - src/figures/${slug}/model.ts`);
 console.log(`  - src/figures/${slug}/model.test.ts`);
+console.log(`  - src/figures/${slug}/Preview.tsx (register in src/figures/previews.tsx)`);
 console.log(`  - src/figures/${slug}/Figures.tsx`);

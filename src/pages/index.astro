@@ -1,39 +1,114 @@
 ---
 import { getCollection } from "astro:content";
 import BaseLayout from "../layouts/BaseLayout.astro";
+import { HeroField } from "../components/HeroField";
+import { PostPreview } from "../figures/previews";
+import { SITE } from "../site.config";
 
 const posts = (await getCollection("posts", ({ data }) => !data.draft)).sort(
   (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
 );
+
+const allTags = Array.from(new Set(posts.flatMap((p) => p.data.tags))).sort();
+const showTagFilter = posts.length >= 2 && allTags.length >= 2;
 ---
 
 <BaseLayout
-  title="Julian Codespoti"
-  description="Interactive deep-dives on how systems work: memory, streaming, networking, and local-first tools."
+  title={SITE.brand}
+  description={SITE.tagline}
   activeNav="posts"
 >
   <main class="col-page">
-    <h1 class="page-title">Posts</h1>
-    <p class="page-sub">
-      Interactive breakdowns of how software actually works under the hood, with small live visuals so you can see every mechanism in motion.
-    </p>
+    <section class="home-hero">
+      <h1 class="home-greeting">Hey, I'm {SITE.shortName}.</h1>
+      <p class="home-bio">
+        I build local-first developer tools in Rust and write about how software actually behaves under real memory, latency, and network constraints.
+      </p>
+      <HeroField client:load />
+    </section>
 
-    <ul class="post-list">
-      {posts.map((post) => {
-        const date = post.data.pubDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
-        return (
-          <li>
-            <a href={`/posts/${post.slug}/`}>
-              <div class="post-list-meta">
-                <time datetime={post.data.pubDate.toISOString()}>{date}</time>
-                <span> / {post.data.readingTime}</span>
-              </div>
-              <h2>{post.data.title}</h2>
-              <p>{post.data.subtitle}</p>
+    <section class="home-section" aria-labelledby="writing-heading">
+      <h2 class="section-kicker" id="writing-heading">Writing</h2>
+
+      {showTagFilter && (
+        <div class="tag-bar" role="group" aria-label="Filter posts by topic">
+          <button type="button" class="ui-btn ui-btn--active" data-tag-filter="all">All</button>
+          {allTags.map((tag) => (
+            <button type="button" class="ui-btn" data-tag-filter={tag}>{tag}</button>
+          ))}
+        </div>
+      )}
+
+      <ul class="post-feed">
+        {posts.map((post) => {
+          const date = post.data.pubDate.toLocaleDateString("en-US", {
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          });
+          const hasPreview = Boolean(post.data.preview);
+          return (
+            <li class="post-feed-item" data-tags={post.data.tags.join(",")}>
+              <a class={hasPreview ? "post-card" : "post-card post-card--no-preview"} href={`/posts/${post.slug}/`}>
+                {hasPreview && (
+                  <div class="post-card-preview" aria-hidden="true">
+                    <PostPreview id={post.data.preview!} client:visible />
+                  </div>
+                )}
+                <div>
+                  <div class="post-card-meta">
+                    <time datetime={post.data.pubDate.toISOString()}>{date}</time>
+                    <span>·</span>
+                    <span>{post.data.readingTime}</span>
+                    {post.data.tags.length > 0 && (
+                      <>
+                        <span>·</span>
+                        <span>{post.data.tags.join(", ")}</span>
+                      </>
+                    )}
+                  </div>
+                  <h3 class="post-card-title">{post.data.title}</h3>
+                  <p class="post-card-sub">{post.data.subtitle}</p>
+                </div>
+              </a>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+
+    <section class="home-section" aria-labelledby="projects-heading">
+      <h2 class="section-kicker" id="projects-heading">Projects</h2>
+      <ul class="project-list">
+        {SITE.projects.map((project) => (
+          <li class="project-row">
+            <a class="project-name" href={project.url} target="_blank" rel="noopener noreferrer">
+              {project.name}
             </a>
+            <span class="project-stack">{project.stack}</span>
+            <p class="project-desc">{project.summary}</p>
           </li>
-        );
-      })}
-    </ul>
+        ))}
+      </ul>
+    </section>
   </main>
+
+  {showTagFilter && (
+    <script is:inline>
+      (() => {
+        const buttons = document.querySelectorAll("[data-tag-filter]");
+        const items = document.querySelectorAll(".post-feed-item");
+        buttons.forEach((btn) => {
+          btn.addEventListener("click", () => {
+            const tag = btn.getAttribute("data-tag-filter") || "all";
+            buttons.forEach((b) => b.classList.toggle("ui-btn--active", b === btn));
+            items.forEach((el) => {
+              const tags = (el.getAttribute("data-tags") || "").split(",");
+              el.style.display = tag === "all" || tags.includes(tag) ? "" : "none";
+            });
+          });
+        });
+      })();
+    </script>
+  )}
 </BaseLayout>

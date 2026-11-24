@@ -5,7 +5,9 @@ import zlib from "node:zlib";
 
 const root = process.cwd();
 const srcDir = path.join(root, "src");
-const distAssetsDir = path.join(root, "dist", "_astro");
+const postsDir = path.join(root, "src", "content", "posts");
+const distDir = path.join(root, "dist");
+const distAssetsDir = path.join(distDir, "_astro");
 
 const UNICODE_SLOP = /[\u2014\u2013\u2018\u2019\u201C\u201D\u2026\u2192\u2190\u200B\uFEFF\u00A0]/;
 const CSS_SLOP = /\b(backdrop-filter|radial-gradient|linear-gradient)\b/i;
@@ -35,7 +37,24 @@ function walk(dir) {
 
 walk(srcDir);
 
-// Enforce reasonable per-figure JS gzip budget (warn/fail if a non-vendor chunk balloons)
+// Verify generated OG PNGs exist in dist/og/ for home + every published post
+if (fs.existsSync(distDir)) {
+  if (!fs.existsSync(path.join(distDir, "og", "home.png"))) {
+    errors.push("Missing dist/og/home.png (run npm run gen:og)");
+  }
+  for (const file of fs.readdirSync(postsDir)) {
+    if (!file.endsWith(".mdx") && !file.endsWith(".md")) continue;
+    const raw = fs.readFileSync(path.join(postsDir, file), "utf8");
+    if (/^draft:\s*true$/m.test(raw)) continue;
+    const slug = file.replace(/\.(mdx|md)$/, "");
+    const ogPath = path.join(distDir, "og", `${slug}.png`);
+    if (!fs.existsSync(ogPath)) {
+      errors.push(`Missing dist/og/${slug}.png for published post ${file}`);
+    }
+  }
+}
+
+// Enforce per-figure JS gzip budget (non-vendor chunks <= 45 KB gzipped)
 if (fs.existsSync(distAssetsDir)) {
   for (const file of fs.readdirSync(distAssetsDir)) {
     if (!file.endsWith(".js")) continue;
@@ -53,4 +72,4 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
-console.log("lint:posts passed (0 Unicode slop, 0 CSS slop, bundle budgets OK).");
+console.log("lint:posts passed (0 Unicode slop, 0 CSS slop, OG cards present, bundle budgets OK).");

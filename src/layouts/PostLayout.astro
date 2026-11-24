@@ -1,30 +1,121 @@
 ---
 import BaseLayout from "./BaseLayout.astro";
+import { SITE } from "../site.config";
+
+interface Heading {
+  depth: number;
+  slug: string;
+  text: string;
+}
+
+interface AdjacentPost {
+  slug: string;
+  title: string;
+}
 
 interface Props {
+  slug: string;
   title: string;
   subtitle: string;
   description: string;
   pubDate: Date;
+  updatedDate?: Date;
   readingTime: string;
+  tags?: string[];
   repoUrl?: string;
+  headings?: Heading[];
+  prevPost?: AdjacentPost;
+  nextPost?: AdjacentPost;
 }
 
-const { title, subtitle, description, pubDate, readingTime, repoUrl } = Astro.props;
-const formattedDate = pubDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+const {
+  slug,
+  title,
+  subtitle,
+  description,
+  pubDate,
+  updatedDate,
+  readingTime,
+  tags = [],
+  repoUrl,
+  headings = [],
+  prevPost,
+  nextPost,
+} = Astro.props;
+
+const formattedDate = pubDate.toLocaleDateString("en-US", {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+
+const tocItems = headings.filter((h) => h.depth === 2);
+const canonical = new URL(`/posts/${slug}/`, Astro.site ?? SITE.siteUrl).toString();
+const ogImage = `/og/${slug}.png`;
+
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "TechArticle",
+  headline: title,
+  description,
+  datePublished: pubDate.toISOString(),
+  ...(updatedDate ? { dateModified: updatedDate.toISOString() } : {}),
+  author: {
+    "@type": "Person",
+    name: SITE.author,
+    url: SITE.siteUrl,
+  },
+  publisher: {
+    "@type": "Person",
+    name: SITE.author,
+  },
+  mainEntityOfPage: canonical,
+  image: new URL(ogImage, Astro.site ?? SITE.siteUrl).toString(),
+  keywords: tags.join(", "),
+};
 ---
 
-<BaseLayout title={`${title} - Julian Codespoti`} description={description} activeNav="posts">
-  <main class="col-page">
+<BaseLayout
+  title={`${title} - ${SITE.brand}`}
+  description={description}
+  activeNav="posts"
+  ogImage={ogImage}
+  ogType="article"
+  publishedTime={pubDate.toISOString()}
+  jsonLd={jsonLd}
+>
+  <div class="reading-progress" id="reading-progress" aria-hidden="true"></div>
+
+  <main class="post-shell">
+    {tocItems.length >= 2 && (
+      <aside class="post-toc" aria-label="On this page">
+        <div class="post-toc-title">On this page</div>
+        <ul>
+          {tocItems.map((h) => (
+            <li>
+              <a href={`#${h.slug}`} data-toc-link={h.slug}>{h.text}</a>
+            </li>
+          ))}
+        </ul>
+      </aside>
+    )}
+
     <article>
       <header class="post-header">
         <div class="post-meta">
           <time datetime={pubDate.toISOString()}>{formattedDate}</time>
-          <span> / {readingTime}</span>
+          <span>·</span>
+          <span>{readingTime}</span>
+          {tags.length > 0 && (
+            <>
+              <span>·</span>
+              <span>{tags.join(", ")}</span>
+            </>
+          )}
           {repoUrl && (
             <>
-              <span> / </span>
-              <a href={repoUrl} target="_blank" rel="noopener noreferrer">source</a>
+              <span>·</span>
+              <a href={repoUrl} target="_blank" rel="noopener noreferrer">Source</a>
             </>
           )}
         </div>
@@ -32,9 +123,97 @@ const formattedDate = pubDate.toLocaleDateString("en-US", { year: "numeric", mon
         <p class="page-sub" style="margin-bottom: 0;">{subtitle}</p>
       </header>
 
-      <div class="post-prose">
+      <div class="post-prose" id="post-prose">
         <slot />
       </div>
+
+      <nav class="post-end" aria-label="Post navigation">
+        {prevPost ? (
+          <a href={`/posts/${prevPost.slug}/`}>Prev: {prevPost.title}</a>
+        ) : (
+          <a href="/">All posts</a>
+        )}
+        {nextPost ? (
+          <a href={`/posts/${nextPost.slug}/`}>Next: {nextPost.title}</a>
+        ) : (
+          <a href="/rss.xml">Subscribe via RSS</a>
+        )}
+      </nav>
     </article>
   </main>
+
+  <script is:inline>
+    (() => {
+      // 1. Reading progress hairline
+      const bar = document.getElementById("reading-progress");
+      const updateProgress = () => {
+        if (!bar) return;
+        const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+        const pct = Math.min(100, Math.max(0, (window.scrollY / max) * 100));
+        bar.style.width = pct.toFixed(2) + "%";
+      };
+      window.addEventListener("scroll", updateProgress, { passive: true });
+      window.addEventListener("resize", updateProgress, { passive: true });
+      updateProgress();
+
+      // 2. Clickable heading anchors + active TOC highlighting
+      const prose = document.getElementById("post-prose");
+      if (prose) {
+        const headings = Array.from(prose.querySelectorAll("h2[id], h3[id]"));
+        headings.forEach((h) => {
+          if (h.querySelector(".heading-anchor")) return;
+          const a = document.createElement("a");
+          a.className = "heading-anchor";
+          a.href = "#" + h.id;
+          a.setAttribute("aria-label", "Link to section " + (h.textContent || ""));
+          a.textContent = "#";
+          h.appendChild(a);
+        });
+
+        // 3. Copy button on fenced code blocks
+        prose.querySelectorAll("pre").forEach((pre) => {
+          if (pre.parentElement?.classList.contains("code-block-wrap")) return;
+          const wrap = document.createElement("div");
+          wrap.className = "code-block-wrap";
+          pre.parentNode?.insertBefore(wrap, pre);
+          wrap.appendChild(pre);
+
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = "code-copy-btn";
+          btn.textContent = "Copy";
+          btn.addEventListener("click", async () => {
+            try {
+              await navigator.clipboard.writeText(pre.textContent || "");
+              btn.textContent = "Copied";
+              window.setTimeout(() => { btn.textContent = "Copy"; }, 1400);
+            } catch {}
+          });
+          wrap.appendChild(btn);
+        });
+
+        // 4. Desktop margin TOC scrollspy
+        const tocLinks = Array.from(document.querySelectorAll("[data-toc-link]"));
+        if (tocLinks.length > 0 && typeof IntersectionObserver !== "undefined") {
+          const setActive = (slug) => {
+            tocLinks.forEach((el) => {
+              el.setAttribute("data-active", el.getAttribute("data-toc-link") === slug ? "true" : "false");
+            });
+          };
+          setActive(tocLinks[0].getAttribute("data-toc-link"));
+          const h2s = Array.from(prose.querySelectorAll("h2[id]"));
+          const io = new IntersectionObserver(
+            (entries) => {
+              const visible = entries.filter((e) => e.isIntersecting);
+              if (visible.length > 0) {
+                setActive(visible[0].target.id);
+              }
+            },
+            { rootMargin: "-10% 0px -70% 0px", threshold: 0 },
+          );
+          h2s.forEach((h) => io.observe(h));
+        }
+      }
+    })();
+  </script>
 </BaseLayout>
