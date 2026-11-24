@@ -1,0 +1,84 @@
+---
+title: "Inside a Coding Agent's Context Window"
+subtitle: "What actually sits inside the prompt on turn 18, why prefix caching breaks, and how tool schemas and compaction change your cost."
+description: "An interactive visual breakdown of coding agent context windows: proportional token budgets, tool schema overhead, prefix cache invalidation, and why naive summarization costs more than capping tool output."
+pubDate: 2026-11-25
+readingTime: "7 min read"
+simsCount: 4
+tags: ["Agents", "LLMs", "Performance"]
+preview: "inside-a-coding-agents-context-window"
+featured: true
+---
+
+import { Cue } from "../../ui";
+import {
+  CompactionRaceFigure,
+  ContextTapeFigure,
+  PrefixCacheFigure,
+  ToolSchemaTaxFigure,
+} from "../../figures/inside-a-coding-agents-context-window/Figures";
+
+When you type a one-line follow-up into a coding agent on turn 18, it feels like sending a small message. Under the hood, stateless LLM APIs receive the **entire conversation history** on every single turn: system instructions, every tool definition, every file read, every stack trace, and every prior reply.
+
+Understanding what actually fills that 200,000-token tape explains almost every mystery developers run into with coding agents: why costs suddenly spike 10x, why adding 40 MCP servers makes the model noticeably dumber, and why summarizing the middle of a conversation often makes your bill go **up** instead of down.
+
+## 1. Where the tokens actually go
+
+In a real coding session, your own messages are usually less than 5% of the prompt. The vast majority of the context window is <Cue tone="sage">file reads</Cue> and raw <Cue tone="copper">tool output</Cue>.
+
+A single uncropped `npm test` failure or verbose build log can easily dump **20,000+ tokens** of repetitive stack traces straight into the history. Because every future turn re-sends that block, one noisy command lingers for the rest of the session.
+
+By contrast, delegating broad codebase exploration to a disposable read-only subagent absorbs 40,000 tokens of grep noise inside a throwaway window and appends only a **450-token summary** to your main tape.
+
+Click the actions below to watch a 200K token tape fill up at true proportional scale.
+
+<ContextTapeFigure client:visible />
+
+## 2. The hidden tax of tool schemas
+
+Before turn 1 even begins, every tool your harness exposes has to be described in JSON inside the prompt prefix. A typical tool or MCP schema with parameters, enums, and usage notes costs around **450 tokens**.
+
+Expose 6 crisp primitives (`read`, `edit`, `write`, `grep`, `find`, `bash`) and your tool prefix is a lean **2.7K tokens**. Wire up 50 MCP tools "just in case" and you burn **22.5K tokens** on every turn before the model has read a single line of your repository.
+
+Drag the slider below to see how fast tool schemas eat working memory across a 20-turn session.
+
+<ToolSchemaTaxFigure client:visible />
+
+## 3. How prefix caching works (and how one edit shatters it)
+
+Re-sending 60,000 tokens on every turn would be painfully slow and expensive if inference servers recomputed attention from scratch every time. Instead, providers cache the **KV state** of the prompt's exact leading prefix.
+
+As long as the prompt only **grows at the end**, the server reuses the cached prefix at roughly **0.1x the input cost** and skips almost all prefill compute.
+
+The catch is strict prefix matching: KV states depend on every token that came before them. Mutate even **one byte** near the front of the prompt (a live `Current time: 14:03:22` timestamp in the system prompt, or dynamically inserting an MCP tool mid-session) and every single token after that edit turns into a <Cue tone="crimson">cache miss</Cue>.
+
+Click any block in the prompt below to mutate it and watch the prefill recompute sweep across the invalidated tail.
+
+<PrefixCacheFigure client:visible />
+
+Three practical harness rules fall directly out of this:
+
+- **Keep the system prompt static:** Put dynamic timestamps, git status, or live file state in the latest user turn rather than editing block 0.
+- **Freeze the tool list per session:** Adding or reordering tools mid-conversation invalidates every turn after the system prompt.
+- **Append, never edit in place:** Treat the message array as an append-only log during active work.
+
+## 4. Why naive compaction can raise your bill
+
+When a session grows long, the intuitive instinct is to summarize older turns every few steps to keep token counts small.
+
+Look at what that actually does to the prefix cache: rewriting turns 1 through 6 into a fresh summary **mutates the front of the conversation**. Every time you compact, you trigger a full <Cue tone="crimson">cache miss</Cue> on everything that follows.
+
+In practice, keeping the prefix immutable and **capping verbose tool outputs at the source** (truncating giant logs to the first and last N lines, or offloading search to a subagent) keeps cache hit rates above 90% and costs dramatically less over a real session.
+
+Toggle between both strategies below across a 14-turn coding run.
+
+<CompactionRaceFigure client:visible />
+
+## Takeaways for harness builders
+
+Good agent performance is mostly **context hygiene**:
+
+1. Keep your tool list small and fixed for the lifetime of a session.
+2. Never mutate early prompt blocks with dynamic timestamps or changing metadata.
+3. Bound tool outputs before they enter history so a single verbose test run never crowds out actual code.
+4. Use isolated subagents for noisy read-only searches, and reserve full compaction for genuine window limits rather than running it every few turns.

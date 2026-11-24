@@ -128,6 +128,26 @@ export function CanvasStage({
     return () => window.cancelAnimationFrame(raf);
   }, [visible, running, theme]);
 
+  // Immediately redraw reactive (running={false}) canvases whenever parent state updates onFrame
+  useEffect(() => {
+    if (running) return;
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    onFrameRef.current({
+      ctx,
+      width: sizeRef.current.width,
+      height: sizeRef.current.height,
+      dt: 0,
+      elapsed: 0,
+      theme: themeRef.current,
+      reducedMotion: reducedRef.current,
+    });
+  }, [running, onFrame, theme]);
+
   const toPointer = (e: PointerEvent<HTMLCanvasElement>): CanvasPointer => {
     const rect = e.currentTarget.getBoundingClientRect();
     return {
