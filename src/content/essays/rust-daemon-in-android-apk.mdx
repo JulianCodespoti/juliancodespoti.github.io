@@ -27,7 +27,7 @@ On Android `targetSdk >= 29`, SELinux blocks `execve()` from an app's writable d
 
 So we compile the daemon statically for `aarch64-unknown-linux-musl` (`-C target-feature=+crt-static -C relocation-model=static`), name it `libomppulse.so`, and bind-mount `nativeLibraryDir` at `/opt/pulse` inside `proot`.
 
-That works on Android 7 through 14. On Android 15 devices with **16 KB kernel pages**, an older 4 KB-aligned binary fails to map because the loader refuses to put <Term tone="copper">executable code</Term> and <Term tone="teal">writable data</Term> inside the same hardware page. Switch the alignment below to watch `.data` clear the page boundary.
+That works on Android 7 through 14. On Android 15 devices with **16 KB kernel pages**, an older 4 KB-aligned binary fails to map because the loader refuses to put <Term tone="copper">executable code</Term> and <Term tone="teal">writable data</Term> inside the same hardware page. Toggle the alignment below (or click the **Data** block) to watch it clear the page boundary.
 
 <PageAlignmentScene client:visible />
 
@@ -68,7 +68,7 @@ We applied the same rule to locked phones. A backgrounded PWA keeps its WebSocke
 
 We did not want a cloud relay or Firebase SDK, so the daemon encrypts and signs Web Push notifications itself. Most Web Push crates pull in `openssl-sys`, which makes cross-compiling across Linux musl, macOS, Windows MSVC, and Android arm64 painful.
 
-RFC 8291 (`aes128gcm`) plus VAPID ES256 signing is only a few hundred lines of Rust on top of `p256`, `hkdf`, `sha2`, and `aes-gcm`. Hit **Send push** below to watch your <Term tone="sage">notification</Term> lock into <Term tone="copper">encrypted bytes</Term> before it ever reaches Google, Apple, or Mozilla's push relay.
+RFC 8291 (`aes128gcm`) plus VAPID ES256 signing is only a few hundred lines of Rust on top of `p256`, `hkdf`, `sha2`, and `aes-gcm`. Hit **Send** below to watch your <Term tone="sage">notification</Term> lock into <Term tone="copper">encrypted bytes</Term> before it ever reaches Google, Apple, or Mozilla's push relay.
 
 <PushCipherScene client:visible />
 
@@ -78,7 +78,7 @@ With zero C crypto dependencies in the tree, `cargo zigbuild --release --target 
 
 `omp` keeps each conversation in a JSONL file, and it rewrites that file wholesale from memory. If a desktop terminal holds <Term tone="copper">its turns in RAM</Term> while the phone spawns a second writer and writes <Term tone="teal">a new turn directly to disk</Term>, the next desktop flush silently wipes out the phone's work.
 
-Hit **Play** in **Two writers** mode, then switch to **Single writer**.
+Switch between **Two writers** and **Single writer** below to watch the race play out.
 
 <SingleWriterScene client:visible />
 

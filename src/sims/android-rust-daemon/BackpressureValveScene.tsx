@@ -10,17 +10,17 @@ export function BackpressureValveScene() {
   const [running, setRunning] = useState(true);
   const { ref, active } = useSceneActive(running);
 
-  const [fill, setFill] = useState(2); // 0..6 capacity
+  const [fill, setFill] = useState(1);
   const [latched, setLatched] = useState(false);
   const [overflows, setOverflows] = useState(0);
-  const [rssMb, setRssMb] = useState(14);
+  const [memoryMb, setMemoryMb] = useState(14);
   const [pulseKey, setPulseKey] = useState(0);
 
   const reset = () => {
     setFill(1);
     setLatched(false);
     setOverflows(0);
-    setRssMb(14);
+    setMemoryMb(14);
     setPulseKey((k) => k + 1);
   };
 
@@ -40,10 +40,9 @@ export function BackpressureValveScene() {
           setOverflows((o) => o + 1);
           if (strategy === "latch") {
             setLatched(true);
-            return 1; // holds 1 resync order, latch stays shut!
+            return 1;
           } else {
-            // Clear-only bug: drops to 1 tiny resync, reopens immediately, RSS climbs!
-            setRssMb((r) => Math.min(321, r + 38));
+            setMemoryMb((m) => Math.min(321, m + 38));
             return 1;
           }
         }
@@ -53,73 +52,87 @@ export function BackpressureValveScene() {
     return () => window.clearInterval(id);
   }, [active, latched, strategy]);
 
+  const statusText = latched
+    ? "Valve closed, watcher paused"
+    : overflows > 1
+      ? "Looping and leaking memory"
+      : "Queue filling while phone is offline";
+
   return (
     <Scene
       sceneRef={ref}
       title={
-        <span>
-          Phone in tunnel (offline) ·{" "}
-          <strong style={{ color: latched ? "var(--sage)" : overflows > 1 ? "var(--crimson)" : "var(--fg)" }}>
-            {latched ? "Valve latched · watcher parked" : overflows > 1 ? `Oscillating (${overflows}×)` : "Filling queue"}
-          </strong>
+        <span style={{ color: latched ? "var(--sage)" : overflows > 1 ? "var(--crimson)" : "var(--fg-muted)", fontWeight: 600 }}>
+          {statusText}
         </span>
       }
       controls={
         <>
           <Choice
-            label="Overflow strategy"
+            label="Overflow behavior"
             value={strategy}
             onChange={setStrategy}
             options={[
-              { value: "clear", label: "Clear only (bug)" },
-              { value: "latch", label: "Stall latch (fix)" },
+              { value: "clear", label: "Clear queue" },
+              { value: "latch", label: "Close valve" },
             ]}
           />
-          <ActionBtn onClick={() => setRunning((r) => !r)}>
-            {running ? <Pause size={12} /> : <Play size={12} />}
+          <ActionBtn
+            iconOnly
+            accent
+            label={running ? "Pause animation" : "Play animation"}
+            onClick={() => setRunning((r) => !r)}
+          >
+            {running ? <Pause size={14} /> : <Play size={14} />}
           </ActionBtn>
-          <ActionBtn onClick={reset}>
-            <RotateCcw size={12} />
+          <ActionBtn iconOnly label="Restart animation" onClick={reset}>
+            <RotateCcw size={14} />
           </ActionBtn>
         </>
       }
       footer={
         <>
-          <span>Overflows: <strong style={{ color: overflows > 1 ? "var(--crimson)" : "var(--fg)" }}>{overflows}</strong></span>
-          <span>Daemon RSS: <strong style={{ color: rssMb > 40 ? "var(--crimson)" : "var(--sage)" }}>{rssMb} MiB</strong></span>
+          <span>
+            Overflows: <strong style={{ color: overflows > 1 ? "var(--crimson)" : "var(--fg)" }}>{overflows}</strong>
+          </span>
+          <span>
+            Memory: <strong style={{ color: memoryMb > 40 ? "var(--crimson)" : "var(--sage)" }}>{memoryMb} MB</strong>
+          </span>
         </>
       }
     >
-      <svg viewBox="0 0 640 132" style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Animated backpressure intake valve and buffer tank">
+      <svg viewBox="0 0 640 124" style={{ width: "100%", height: "auto", display: "block" }} role="img" aria-label="Backpressure intake valve and queue">
         {/* Intake pipe */}
-        <line x1="92" y1="66" x2="215" y2="66" stroke="var(--line-strong)" strokeWidth="3" />
-        {/* Output pipe (blocked because phone is offline) */}
-        <line x1="445" y1="66" x2="548" y2="66" stroke="var(--crimson-line)" strokeWidth="2.5" strokeDasharray="5 5" />
+        <line x1="94" y1="64" x2="216" y2="64" stroke="var(--line-strong)" strokeWidth="3" />
+        {/* Blocked output pipe */}
+        <line x1="444" y1="64" x2="546" y2="64" stroke="var(--crimson-line)" strokeWidth="2.5" strokeDasharray="5 5" />
 
-        {/* Producer box */}
-        <rect x="10" y="34" width="84" height="64" rx="8" fill="var(--stage-sub)" stroke="var(--line-strong)" strokeWidth="1.2" />
-        <text x="52" y="62" textAnchor="middle" fill="var(--fg)" fontFamily="var(--font-mono)" fontSize="11" fontWeight="600">Watcher</text>
-        <text x="52" y="79" textAnchor="middle" fill={latched ? "var(--sage)" : "var(--fg-dim)"} fontFamily="var(--font-mono)" fontSize="9.5">
-          {latched ? "parked" : "reading"}
+        {/* Watcher */}
+        <rect x="10" y="32" width="84" height="64" rx="10" fill="var(--stage-sub)" stroke="var(--line-strong)" strokeWidth="1.2" />
+        <text x="52" y="60" textAnchor="middle" fill="var(--fg)" fontFamily="var(--font-sans)" fontSize="12.5" fontWeight="600">
+          Watcher
+        </text>
+        <text x="52" y="78" textAnchor="middle" fill={latched ? "var(--sage)" : "var(--fg-dim)"} fontFamily="var(--font-sans)" fontSize="11">
+          {latched ? "paused" : "reading"}
         </text>
 
-        {/* Animated incoming chunk: either flows into tank OR bounces off closed latch */}
+        {/* Moving chunk */}
         <motion.circle
           key={pulseKey}
           r="6"
-          cy="66"
+          cy="64"
           initial={{ cx: 102, opacity: 0.9 }}
           animate={
             latched
               ? { cx: [102, 162, 138], opacity: [0.9, 0.9, 0] }
-              : { cx: [102, 215], opacity: [0.9, 0.9] }
+              : { cx: [102, 214], opacity: [0.9, 0.9] }
           }
           transition={{ duration: 0.46, ease: "easeOut" }}
           fill={latched ? "var(--fg-dim)" : "var(--copper)"}
         />
 
-        {/* Physical swinging intake valve arm */}
-        <g transform="translate(178, 36)">
+        {/* Swinging valve */}
+        <g transform="translate(178, 34)">
           <motion.g
             animate={{ rotate: latched ? 0 : -68 }}
             transition={SPRING_SNAPPY}
@@ -131,32 +144,28 @@ export function BackpressureValveScene() {
               x2="0"
               y2="46"
               stroke={latched ? "var(--sage)" : "var(--fg-muted)"}
-              strokeWidth="4"
+              strokeWidth="4.5"
               strokeLinecap="round"
             />
           </motion.g>
           <circle cx="0" cy="0" r="4.5" fill="var(--fg)" />
-          <text x="0" y="-10" textAnchor="middle" fill={latched ? "var(--sage)" : "var(--fg-dim)"} fontFamily="var(--font-mono)" fontSize="9.5">
-            {latched ? "LATCHED" : "OPEN"}
+          <text x="0" y="-11" textAnchor="middle" fill={latched ? "var(--sage)" : "var(--fg-dim)"} fontFamily="var(--font-sans)" fontSize="11" fontWeight="500">
+            {latched ? "Closed" : "Open"}
           </text>
         </g>
 
         {/* Queue tank */}
         <rect
           x="216"
-          y="26"
+          y="24"
           width="228"
           height="80"
-          rx="9"
+          rx="11"
           fill="var(--bg)"
           stroke={overflows > 1 && strategy === "clear" ? "var(--crimson)" : latched ? "var(--sage)" : "var(--line-strong)"}
           strokeWidth="1.5"
         />
-        <text x="330" y="18" textAnchor="middle" fill="var(--fg-dim)" fontFamily="var(--font-mono)" fontSize="9.5">
-          Per-client queue (cap: 6 slots)
-        </text>
 
-        {/* Animated bars inside the queue tank */}
         {[0, 1, 2, 3, 4, 5].map((i) => {
           const isResync = i === 0 && overflows > 0 && fill === 1;
           const activeSlot = i < fill;
@@ -168,7 +177,7 @@ export function BackpressureValveScene() {
               rx={5}
               initial={false}
               animate={{
-                y: activeSlot ? 40 : 84,
+                y: activeSlot ? 38 : 82,
                 height: activeSlot ? 52 : 8,
                 opacity: activeSlot ? 1 : 0.22,
                 fill: isResync
@@ -182,10 +191,14 @@ export function BackpressureValveScene() {
           );
         })}
 
-        {/* Phone box (offline) */}
-        <rect x="548" y="34" width="82" height="64" rx="8" fill="var(--stage-sub)" stroke="var(--crimson-line)" strokeWidth="1.2" />
-        <text x="589" y="62" textAnchor="middle" fill="var(--fg)" fontFamily="var(--font-mono)" fontSize="11" fontWeight="600">Phone</text>
-        <text x="589" y="79" textAnchor="middle" fill="var(--crimson)" fontFamily="var(--font-mono)" fontSize="9.5">offline</text>
+        {/* Offline phone */}
+        <rect x="546" y="32" width="84" height="64" rx="10" fill="var(--stage-sub)" stroke="var(--crimson-line)" strokeWidth="1.2" />
+        <text x="588" y="60" textAnchor="middle" fill="var(--fg)" fontFamily="var(--font-sans)" fontSize="12.5" fontWeight="600">
+          Phone
+        </text>
+        <text x="588" y="78" textAnchor="middle" fill="var(--crimson)" fontFamily="var(--font-sans)" fontSize="11">
+          offline
+        </text>
       </svg>
     </Scene>
   );

@@ -3,7 +3,7 @@ import { Lock, LockOpen, Send } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { ActionBtn, Scene, SPRING_GENTLE } from "../../engine";
 
-type Stage = 0 | 1 | 2; // 0 = daemon plaintext, 1 = crossing relay encrypted, 2 = decrypted on phone
+type Stage = 0 | 1 | 2;
 
 function scramble(text: string): string {
   const out: string[] = [];
@@ -17,11 +17,11 @@ function scramble(text: string): string {
 }
 
 export function PushCipherScene() {
-  const [msg, setMsg] = useState("Reply ready: 9 tests pass");
+  const [msg, setMsg] = useState("Build finished");
   const [stage, setStage] = useState<Stage>(1);
-
-  const hex = useMemo(() => scramble(msg || "Reply ready"), [msg]);
   const timersRef = useRef<number[]>([]);
+
+  const hex = useMemo(() => scramble(msg || "Build finished"), [msg]);
 
   const clearTimers = () => {
     timersRef.current.forEach((t) => window.clearTimeout(t));
@@ -42,73 +42,74 @@ export function PushCipherScene() {
 
   return (
     <Scene
-      title="Zero-OpenSSL Web Push (p256 + hkdf + aes-gcm)"
+      title="End-to-end encrypted push"
       controls={
-        <ActionBtn accent onClick={sendPush}>
-          <Send size={12} />
-          Send push
+        <ActionBtn accent onClick={sendPush} label="Send encrypted push">
+          <Send size={13} />
+          Send
         </ActionBtn>
       }
       footer={
-        <label style={{ display: "flex", alignItems: "center", gap: "0.6rem", width: "100%" }}>
-          <span>notification:</span>
-          <input
-            type="text"
-            value={msg}
-            maxLength={48}
-            onChange={(e) => setMsg(e.target.value)}
-            style={{
-              flex: 1,
-              minWidth: 0,
-              padding: "0.3rem 0.55rem",
-              borderRadius: "5px",
-              border: "1px solid var(--line)",
-              background: "var(--bg)",
-              color: "var(--fg)",
-              fontFamily: "var(--font-mono)",
-              fontSize: "0.76rem",
-            }}
-          />
-        </label>
+        <input
+          type="text"
+          aria-label="Notification text"
+          placeholder="Type a notification..."
+          value={msg}
+          maxLength={40}
+          onChange={(e) => setMsg(e.target.value)}
+          style={{
+            width: "100%",
+            padding: "0.38rem 0.65rem",
+            borderRadius: "7px",
+            border: "1px solid var(--line)",
+            background: "var(--bg)",
+            color: "var(--fg)",
+            fontFamily: "var(--font-sans)",
+            fontSize: "0.84rem",
+          }}
+        />
       }
     >
-      {/* 3 clickable station nodes */}
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.6rem", marginBottom: "0.9rem" }}>
+      {/* 3 clickable stations */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: "0.65rem", marginBottom: "0.95rem" }}>
         {[
-          { idx: 0 as Stage, name: "1. Your daemon", sub: "seals with aes-gcm" },
-          { idx: 1 as Stage, name: "2. Push relay", sub: "sees cipher bytes only" },
-          { idx: 2 as Stage, name: "3. Your phone", sub: "decrypts locally" },
+          { idx: 0 as Stage, name: "Daemon", sub: "Encrypts" },
+          { idx: 1 as Stage, name: "Push Relay", sub: "Sees gibberish" },
+          { idx: 2 as Stage, name: "Phone", sub: "Decrypts" },
         ].map((node) => (
           <button
             key={node.name}
             type="button"
-            onClick={() => setStage(node.idx)}
+            onClick={() => {
+              clearTimers();
+              setStage(node.idx);
+            }}
             style={{
               textAlign: "left",
-              padding: "0.55rem 0.65rem",
-              borderRadius: "7px",
+              padding: "0.6rem 0.75rem",
+              borderRadius: "8px",
               border: `1px solid ${stage === node.idx ? "var(--line-strong)" : "var(--line)"}`,
               background: stage === node.idx ? "var(--stage-sub)" : "var(--bg)",
               cursor: "pointer",
-              fontFamily: "var(--font-mono)",
+              fontFamily: "var(--font-sans)",
             }}
           >
-            <div style={{ fontSize: "0.74rem", fontWeight: 600, color: "var(--fg)" }}>{node.name}</div>
-            <div style={{ fontSize: "0.68rem", color: "var(--fg-dim)", marginTop: "2px" }}>{node.sub}</div>
+            <div style={{ fontSize: "0.84rem", fontWeight: 600, color: "var(--fg)" }}>{node.name}</div>
+            <div style={{ fontSize: "0.75rem", color: "var(--fg-dim)", marginTop: "2px" }}>{node.sub}</div>
           </button>
         ))}
       </div>
 
-      {/* Animated gliding packet that physically locks & scrambles across the relay */}
+      {/* Gliding packet track */}
       <div
         style={{
-          borderRadius: "8px",
+          borderRadius: "9px",
           border: "1px solid var(--line)",
           background: "var(--bg)",
           padding: "6px",
         }}
       >
-        <div style={{ position: "relative", height: "42px" }}>
+        <div style={{ position: "relative", height: "44px" }}>
           <motion.div
             animate={{
               left: positions[stage],
@@ -121,21 +122,22 @@ export function PushCipherScene() {
               top: 0,
               bottom: 0,
               width: "38%",
-              borderRadius: "6px",
+              borderRadius: "7px",
               borderWidth: "1.5px",
               borderStyle: "solid",
-              padding: "0 0.65rem",
+              padding: "0 0.7rem",
               display: "flex",
               alignItems: "center",
               gap: "0.45rem",
-              fontFamily: "var(--font-mono)",
-              fontSize: "0.73rem",
+              fontFamily: isCipher ? "var(--font-mono)" : "var(--font-sans)",
+              fontSize: isCipher ? "0.76rem" : "0.84rem",
+              fontWeight: 500,
               color: "var(--fg)",
               overflow: "hidden",
             }}
           >
-            <span style={{ color: isCipher ? "var(--copper)" : "var(--sage)", flexShrink: 0 }}>
-              {isCipher ? <Lock size={13} /> : <LockOpen size={13} />}
+            <span style={{ color: isCipher ? "var(--copper)" : "var(--sage)", flexShrink: 0, display: "flex" }}>
+              {isCipher ? <Lock size={14} /> : <LockOpen size={14} />}
             </span>
             <span style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
               {isCipher ? hex : msg || "(empty)"}

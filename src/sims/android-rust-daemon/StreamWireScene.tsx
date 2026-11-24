@@ -3,79 +3,79 @@ import { Pause, Play, RotateCcw } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ActionBtn, Scene, SPRING_GENTLE, useSceneActive } from "../../engine";
 
-const TOKENS = ["All ", "9 ", "Vitest ", "cases ", "pass ", "on ", "arm64."];
+const WORDS = ["All ", "9 ", "tests ", "pass ", "on ", "arm64."];
 
 export function StreamWireScene() {
   const [running, setRunning] = useState(true);
   const { ref, active } = useSceneActive(running);
-  const [tick, setTick] = useState(1);
+  const [step, setStep] = useState(1);
 
   useEffect(() => {
     if (!active) return;
     const id = window.setInterval(() => {
-      setTick((t) => (t >= TOKENS.length ? 1 : t + 1));
+      setStep((s) => (s >= WORDS.length ? 1 : s + 1));
     }, 950);
     return () => window.clearInterval(id);
   }, [active]);
 
-  const text = TOKENS.slice(0, tick).join("");
+  const text = WORDS.slice(0, step).join("");
   let snapUnits = 0;
-  for (let i = 1; i <= tick; i++) snapUnits += i;
-  const deltaUnits = tick;
+  for (let i = 1; i <= step; i++) snapUnits += i;
 
-  const snapKb = Math.round((snapUnits / 28) * 244);
-  const deltaKb = Math.round((deltaUnits / 7) * 25);
-  const snapPacketW = 24 + tick * 24;
+  const snapKb = Math.round((snapUnits / 21) * 244);
+  const deltaKb = Math.round((step / WORDS.length) * 25);
+  const snapW = 28 + step * 26;
 
   return (
     <Scene
       sceneRef={ref}
-      title={<span>Streaming: <strong style={{ color: "var(--fg)" }}>"{text}"</strong></span>}
+      title={
+        <span>
+          Reply: <strong style={{ color: "var(--fg)", fontWeight: 600 }}>"{text}"</strong>
+        </span>
+      }
       controls={
         <>
-          <ActionBtn accent onClick={() => setRunning((r) => !r)}>
-            {running ? <Pause size={12} /> : <Play size={12} />}
-            {running ? "Pause" : "Play"}
+          <ActionBtn
+            iconOnly
+            accent
+            label={running ? "Pause animation" : "Play animation"}
+            onClick={() => setRunning((r) => !r)}
+          >
+            {running ? <Pause size={14} /> : <Play size={14} />}
           </ActionBtn>
-          <ActionBtn onClick={() => setTick(1)}>
-            <RotateCcw size={12} />
-            Restart
+          <ActionBtn iconOnly label="Restart animation" onClick={() => setStep(1)}>
+            <RotateCcw size={14} />
           </ActionBtn>
-        </>
-      }
-      footer={
-        <>
-          <span>Full snapshots: <strong style={{ color: "var(--copper)" }}>{snapKb} KB</strong></span>
-          <span>Prefix deltas: <strong style={{ color: "var(--sage)" }}>{deltaKb} KB</strong></span>
         </>
       }
     >
-      <div style={{ display: "flex", flexDirection: "column", gap: "1.15rem" }}>
-        {/* Lane 1: Full snapshot wire where packet grows wider every tick */}
+      <div style={{ display: "flex", flexDirection: "column", gap: "1.25rem" }}>
+        {/* Full resends */}
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--font-mono)", fontSize: "0.73rem", marginBottom: "0.3rem" }}>
-            <span style={{ color: "var(--copper)", fontWeight: 600 }}>Full snapshots (resends entire reply)</span>
-            <span style={{ color: "var(--fg-dim)" }}>frame #{tick} · {tick}x size</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.35rem" }}>
+            <span style={{ fontSize: "0.84rem", fontWeight: 600, color: "var(--copper)" }}>Full resends</span>
+            <span style={{ fontSize: "0.84rem", fontWeight: 600, color: "var(--fg)", fontVariantNumeric: "tabular-nums" }}>
+              {snapKb} KB
+            </span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "62px minmax(0, 1fr) 54px", alignItems: "center", gap: "0.6rem" }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.72rem", color: "var(--fg-muted)" }}>Daemon</span>
-            <svg viewBox="0 0 460 28" style={{ width: "100%", height: "28px", display: "block", overflow: "hidden" }} aria-hidden="true">
-              <line x1="0" y1="14" x2="460" y2="14" stroke="var(--line)" strokeWidth="2" />
-              <motion.rect
-                key={`snap-${tick}`}
-                y={6}
-                height={16}
-                rx={4}
-                width={snapPacketW}
-                fill="var(--copper)"
-                initial={{ x: 0, opacity: 0.25 }}
-                animate={{ x: 460 - snapPacketW, opacity: [0.35, 1, 1, 0.25] }}
-                transition={{ duration: 0.84, ease: "easeInOut" }}
-              />
-            </svg>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.72rem", color: "var(--fg-muted)", textAlign: "right" }}>Phone</span>
-          </div>
-          <div style={{ height: "5px", marginTop: "0.25rem", borderRadius: "999px", background: "var(--bg)", overflow: "hidden" }}>
+          <svg viewBox="0 0 560 28" style={{ width: "100%", height: "28px", display: "block", overflow: "hidden" }} aria-hidden="true">
+            <line x1="6" y1="14" x2="554" y2="14" stroke="var(--line)" strokeWidth="2" />
+            <circle cx="6" cy="14" r="3.5" fill="var(--line-strong)" />
+            <circle cx="554" cy="14" r="3.5" fill="var(--line-strong)" />
+            <motion.rect
+              key={`snap-${step}`}
+              y={5}
+              height={18}
+              rx={5}
+              width={snapW}
+              fill="var(--copper)"
+              initial={{ x: 10, opacity: 0.25 }}
+              animate={{ x: 550 - snapW, opacity: [0.35, 1, 1, 0.25] }}
+              transition={{ duration: 0.84, ease: "easeInOut" }}
+            />
+          </svg>
+          <div style={{ height: "6px", marginTop: "0.3rem", borderRadius: "999px", background: "var(--bg)", overflow: "hidden" }}>
             <motion.div
               animate={{ width: `${Math.max(4, (snapKb / 244) * 100)}%` }}
               transition={SPRING_GENTLE}
@@ -84,31 +84,31 @@ export function StreamWireScene() {
           </div>
         </div>
 
-        {/* Lane 2: Prefix delta wire with constant sliver every tick */}
+        {/* Deltas only */}
         <div>
-          <div style={{ display: "flex", justifyContent: "space-between", fontFamily: "var(--font-mono)", fontSize: "0.73rem", marginBottom: "0.3rem" }}>
-            <span style={{ color: "var(--sage)", fontWeight: 600 }}>Prefix deltas (sends only new suffix)</span>
-            <span style={{ color: "var(--fg-dim)" }}>frame #{tick} · constant</span>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: "0.35rem" }}>
+            <span style={{ fontSize: "0.84rem", fontWeight: 600, color: "var(--sage)" }}>Deltas only</span>
+            <span style={{ fontSize: "0.84rem", fontWeight: 600, color: "var(--fg)", fontVariantNumeric: "tabular-nums" }}>
+              {deltaKb} KB
+            </span>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "62px minmax(0, 1fr) 54px", alignItems: "center", gap: "0.6rem" }}>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.72rem", color: "var(--fg-muted)" }}>Daemon</span>
-            <svg viewBox="0 0 460 28" style={{ width: "100%", height: "28px", display: "block", overflow: "hidden" }} aria-hidden="true">
-              <line x1="0" y1="14" x2="460" y2="14" stroke="var(--line)" strokeWidth="2" />
-              <motion.rect
-                key={`delta-${tick}`}
-                y={7}
-                height={14}
-                rx={4}
-                width={22}
-                fill="var(--sage)"
-                initial={{ x: 0, opacity: 0.25 }}
-                animate={{ x: 438, opacity: [0.4, 1, 1, 0.25] }}
-                transition={{ duration: 0.72, ease: "easeInOut" }}
-              />
-            </svg>
-            <span style={{ fontFamily: "var(--font-mono)", fontSize: "0.72rem", color: "var(--fg-muted)", textAlign: "right" }}>Phone</span>
-          </div>
-          <div style={{ height: "5px", marginTop: "0.25rem", borderRadius: "999px", background: "var(--bg)", overflow: "hidden" }}>
+          <svg viewBox="0 0 560 28" style={{ width: "100%", height: "28px", display: "block", overflow: "hidden" }} aria-hidden="true">
+            <line x1="6" y1="14" x2="554" y2="14" stroke="var(--line)" strokeWidth="2" />
+            <circle cx="6" cy="14" r="3.5" fill="var(--line-strong)" />
+            <circle cx="554" cy="14" r="3.5" fill="var(--line-strong)" />
+            <motion.rect
+              key={`delta-${step}`}
+              y={7}
+              height={14}
+              rx={4}
+              width={24}
+              fill="var(--sage)"
+              initial={{ x: 10, opacity: 0.25 }}
+              animate={{ x: 526, opacity: [0.4, 1, 1, 0.25] }}
+              transition={{ duration: 0.72, ease: "easeInOut" }}
+            />
+          </svg>
+          <div style={{ height: "6px", marginTop: "0.3rem", borderRadius: "999px", background: "var(--bg)", overflow: "hidden" }}>
             <motion.div
               animate={{ width: `${Math.max(2, (deltaKb / 244) * 100)}%` }}
               transition={SPRING_GENTLE}
