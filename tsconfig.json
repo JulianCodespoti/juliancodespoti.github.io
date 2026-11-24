@@ -6,8 +6,11 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["src/*"],
-      "@engine": ["src/engine/index.ts"],
-      "@engine/*": ["src/engine/*"]
+      "@runtime": ["src/runtime/index.ts"],
+      "@runtime/*": ["src/runtime/*"],
+      "@ui": ["src/ui/index.ts"],
+      "@ui/*": ["src/ui/*"],
+      "@figures/*": ["src/figures/*"]
     }
   }
 }

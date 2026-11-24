@@ -1,99 +1,91 @@
 ---
 title: "How OMP Pulse Streams Coding Agents to Your Phone in 14 MB of RAM"
-subtitle: "Inside a single Rust daemon: lazy worker pools, backward-seek history reading, delta streaming, and back-pressure that keeps memory flat."
+subtitle: "Inside a single Rust daemon: lazy worker pools, backward-seek history reading, live delta streaming, and back-pressure that keeps memory flat."
 description: "How OMP Pulse bridges terminal coding agents and mobile phones using a 14 MB Rust daemon with capped worker pools, 0.59 ms tail reads, 9.7x smaller delta streams, and audience-aware back-pressure."
 pubDate: 2026-11-24
-readingTime: "7 min read"
-simsCount: 5
+readingTime: "6 min read"
+simsCount: 4
 tags: ["Rust", "Performance", "Architecture"]
 repoUrl: "https://github.com/JulianCodespoti/omp-pulse"
 featured: true
 ---
 
-import { Term } from "../../engine";
-import { WorkerPoolScene } from "../../sims/omp-pulse/WorkerPoolScene";
-import { TailReadScene } from "../../sims/omp-pulse/TailReadScene";
-import { StreamWireScene } from "../../sims/omp-pulse/StreamWireScene";
-import { BackpressureValveScene } from "../../sims/omp-pulse/BackpressureValveScene";
-import { PushCipherScene } from "../../sims/omp-pulse/PushCipherScene";
+import { Cue } from "../../ui";
+import {
+  BackpressurePipeFigure,
+  LiveDeltaWireFigure,
+  MemoryGridFigure,
+  TailRaceFigure,
+} from "../../figures/omp-pulse-memory/Figures";
 
 [OMP Pulse](https://github.com/JulianCodespoti/omp-pulse) lets you drive terminal coding agents from your phone over Tailscale, or run the exact same daemon locally inside an unrooted Android APK when your laptop is closed.
 
-The whole server is a single Rust binary (`tokio` + `axum`) with the React web client compiled straight into the executable. On a laptop or phone with thousands of past conversations, the hard part is not serving HTTP; it is keeping memory flat, history instant, and mobile data light while heavy coding-agent workers run underneath.
+The server is a single Rust binary (`tokio` + `axum`) with the React web client compiled straight into the executable. On a laptop or phone with thousands of past conversations, the hard part is not serving HTTP; it is keeping memory flat, history instant, and mobile data light while heavy coding-agent workers run underneath.
 
-Here is how the pipeline works from top to bottom, with every measurement pulled from our benchmark corpus of 3,365 real-sized sessions.
+Here is how the pipeline works from top to bottom, with every figure backed by real measurements from our 3,365-session benchmark corpus.
 
 ## 1. Browsing in 14 MB with a lazy worker pool
 
-The Rust daemon itself uses about **14 MB** of RAM. All the heavy memory lives inside the coding-agent child processes (`omp --mode rpc-ui`): each worker takes roughly **281 MB** at rest, peaks around **493 MB** while booting, and takes **1.3 to 2.7 seconds** to start.
+The Rust daemon itself sits at roughly **14 MB** of RAM. Almost all real memory lives inside the coding-agent worker processes (`omp --mode rpc-ui`): each worker takes **281 MB** at rest, peaks near **493 MB** during startup, and needs **1.3 to 2.7 seconds** to boot.
 
-If opening a conversation on your phone spawned a worker immediately, flipping through five chats would burn over **1.4 GB** of RAM before you typed a single word.
+Drawn to actual scale, one worker is **20 times larger** than the entire daemon. If opening a conversation booted a worker immediately, flipping through five chats would consume **1.4 GB** before you typed a word.
 
-Instead, OMP Pulse separates **reading** from **running**:
+OMP Pulse separates reading from running:
 
-- **Reading is free:** Opening a chat reads the session file directly from disk with zero workers running (`14 MB` total).
-- **Pre-warming on intent:** The moment you tap the reply box to start typing, the phone calls `POST /api/prewarm`. The worker boots in the background while you compose your prompt, hiding startup latency behind human typing speed.
-- **Capped pool with hot retargeting:** Workers share a pool capped at **3 slots** (`891 MB` under a 12-chat burst instead of `3.4 GB`). When all slots are warm, replying in a new chat **retargets** an idle worker (`switch_session`) in **59 ms** instead of paying another 2-second cold boot. Idle workers are reaped after 15 minutes, and any worker whose RSS drifts past **700 MB** is recycled cleanly between turns.
+- **Reading costs zero workers:** Opening a chat reads directly from disk (`14 MB` total).
+- **Pre-warming on intent:** Tapping the reply box calls `POST /api/prewarm`, hiding the 2-second boot inside the time it takes you to type your prompt.
+- **Capped pool with hot retargeting:** Workers share a **3-slot pool** (`891 MB` under a 12-chat burst instead of `3.4 GB`). When all 3 slots are warm, replying in a 4th chat **retargets** the oldest idle worker (`switch_session`) in **59 ms** instead of cold-booting a new process. Idle workers are reaped after 15 minutes, and any worker that grows past **700 MB** RSS is recycled cleanly between turns.
 
-Click through the chats below and compare <Term tone="copper">Always spawn</Term> against <Term tone="teal">Lazy pool (max 3)</Term>.
+Click through the chats below to compare <Cue tone="copper">Always spawn</Cue> against <Cue tone="teal">Lazy pool (max 3)</Cue> at true 20:1 visual scale.
 
-<WorkerPoolScene client:visible />
+<MemoryGridFigure client:visible />
 
 ## 2. Opening a 44 MB chat in 0.59 ms
 
-Conversations are stored as append-only JSONL files that can grow past **44 MB** after long debugging sessions with tool output. When you tap a chat on your phone, you only need the most recent screen of messages at the bottom.
+Conversations live in append-only JSONL files that can grow past **44 MB** during long debugging sessions with tool output. When you open a chat on your phone, you only need the most recent screen of messages at the bottom.
 
-Reading a 44 MB file from byte zero takes **36.4 ms** and pulls the entire history through memory just to return **70 KB** of recent turns.
+Scanning a 44 MB file from byte zero takes **36.4 ms** and pulls the entire file through memory just to return **70 KB** of recent turns. Instead, OMP Pulse seeks straight to the end of the file and reads small chunks backward until it has enough records for page 1, cutting first-screen latency to **0.59 ms** (**62x faster**).
 
-OMP Pulse skips straight to the end of the file and reads small chunks backward until it has enough messages to fill page 1. That cuts the first-screen load on a 44 MB session from **36.4 ms down to 0.59 ms** (**62x faster**).
+<TailRaceFigure client:visible />
 
-<TailReadScene client:visible />
+Two small caches keep the rest of the interface just as quick:
 
-Two small caches keep the rest of the UI just as fast:
-
-- **Parsed session cache:** If you scroll upward into older history, the parsed message tree is cached by `(path, size, mtime)`. Subsequent page loads drop from **105 ms cold to 17 microseconds cached**.
-- **Stale-while-revalidate session index:** Listing 3,365 conversations used to take **134.2 ms** cold. One shared index now serves every query from a cached `Arc<str>` with a content-addressed `ETag`, dropping steady-state polls to **0.74 ms** and **300-byte `304 Not Modified`** responses.
+- **Parsed session cache:** Scrolling further up caches the parsed message tree by `(path, size, mtime)`, dropping repeat page loads from **105 ms cold to 17 microseconds cached**.
+- **Stale-while-revalidate index:** One shared index serves all 3,365 sessions from a cached `Arc<str>` with a content-addressed `ETag`, turning steady-state polls into **0.74 ms** / **300-byte `304 Not Modified`** responses.
 
 ## 3. Streaming live tokens at one-tenth the bandwidth
 
-While an agent is actively writing a reply, tokens stream over a WebSocket. The simplest way to keep the phone UI in sync is to send the whole growing reply on every update, which turns a 4,228-character message into **244 KB** of repeated wire traffic (`57.8x` amplification).
+While an agent writes a reply, tokens stream to your phone over a WebSocket. Sending the entire growing message on every update turns a 4,228-character turn into **244 KB** of repeated traffic (`57.8x` amplification).
 
-Instead, the daemon compares each new frame against the previous one and sends only a compact <Term tone="sage">prefix delta</Term>: keep `k` UTF-16 code units, append the new suffix. Measuring `k` in UTF-16 units matches JavaScript's `String.prototype.slice` directly so emojis are never split mid-character, and suffix replacement handles trailing whitespace normalization cleanly.
+Instead, each frame diffs against the previous string and sends a compact <Cue tone="sage">prefix delta</Cue>: keep `k` UTF-16 code units, append the new suffix. Measuring `k` in UTF-16 code units matches JavaScript's `String.prototype.slice` directly so emojis are never split across surrogate pairs, and suffix replacement handles trailing whitespace edits cleanly. On the same 4,228-character reply, wire traffic drops from **244 KB to 25 KB** (**9.7x smaller**).
 
-On the exact same 4,228-character turn, wire traffic drops from **244 KB to 25 KB** (**9.7x smaller**).
+Every delta also carries the sequence number (`base_seq`) it extends. Fast clients stay on tiny deltas; if a phone drops packets or joins mid-reply, its sequence number mismatches and the hub sends one full snapshot automatically before resuming deltas on the next token.
 
-<StreamWireScene client:visible />
+Type anything below (or hit Play) to run the real UTF-16 delta encoder live.
 
-Every delta carries the sequence number (`base_seq`) it builds on. Fast clients stay on tiny deltas; if a phone briefly drops packets or joins mid-stream, its sequence number will not match and the hub automatically sends one clean full snapshot before resuming deltas on the next token.
+<LiveDeltaWireFigure client:visible />
 
 ## 4. Keeping memory flat when your phone sleeps or loses signal
 
-A background file watcher tails active chats and fans updates out to connected phones. Mobile networks introduce two tricky situations: phones frequently lose signal in tunnels, and locked phones keep their WebSocket open in your pocket.
+A background file watcher tails active chats and fans updates out to connected phones. Mobile connections create two constant hazards: phones drop signal in tunnels, and locked phones keep their WebSocket open in your pocket.
 
-OMP Pulse keeps daemon memory completely flat with three layers:
+OMP Pulse keeps memory flat with three layers:
 
-1. **Audience-aware sleeping:** The hub tracks which sockets are actually visible and ready to receive (`has_audience`). The moment you lock your phone, the watcher parks completely instead of waking every 250 ms, and queues a single refresh for when your screen turns back on.
-2. **Byte-capped queues with a stall latch:** Each client queue caps both frame count and total bytes. If a phone goes offline during a **150 MB** build log, simply clearing the queue makes headroom again so the watcher keeps reading and spikes memory by **+320 MB**. Instead, overflowing flips a <Term tone="sage">stall latch</Term> that closes the intake valve until the phone drains, holding RSS growth at **+0 MB**.
-3. **Returning memory to the OS:** Once a heavy burst finishes, oversized watcher buffers above 256 KB are dropped rather than pinned, and on Linux glibc the maintenance loop calls `malloc_trim` so freed heap arenas return to the operating system immediately.
+1. **Audience-aware sleeping:** The hub tracks only visible clients with queue headroom (`has_audience`). The moment your screen locks, the watcher parks completely instead of waking every 250 ms, queueing one refresh for when you unlock.
+2. **Byte-capped queues with a stall latch:** Each client queue bounds both frame count and total bytes. Simply clearing a full queue during a **150 MB** build log immediately restores headroom so the watcher keeps reading and spikes memory by **+320 MB**. Flipping a <Cue tone="sage">stall latch</Cue> closes the intake gate until the phone reconnects and drains, keeping RSS growth at **+0 MB**.
+3. **Returning memory to the OS:** Oversized watcher buffers above 256 KB are dropped once a burst settles, and on Linux glibc the maintenance loop runs `malloc_trim` so freed heap arenas return to the operating system immediately.
 
-Switch between <Term tone="copper">Clear queue</Term> and <Term tone="sage">Close valve</Term> below to see how the latch stops memory growth.
+Press and hold **Lose signal** below, then compare <Cue tone="copper">Clear queue</Cue> against <Cue tone="sage">Stall latch</Cue>.
 
-<BackpressureValveScene client:visible />
+<BackpressurePipeFigure client:visible />
 
-## 5. One writer on disk and private push without cloud relays
+## 5. One writer on disk and pure-Rust push
 
-Two architectural choices finish the loop between laptop and phone.
+Two final design choices keep desktop and mobile working together cleanly:
 
-**Single-writer routing:** A terminal `omp` session rewrites its JSONL file from memory, so two processes writing to the same file would clobber each other. Before spawning a worker, the daemon checks a sidecar lock file, live process arguments, and open file descriptors. If your desktop terminal already owns the chat, phone prompts route straight through the desktop extension instead of spawning a second writer, keeping both screens live at token level with a single owner on disk.
-
-**Pure-Rust encrypted push:** When an agent finishes a long run while your phone is locked, you want a notification without routing your prompts through a custom cloud server or bundling OpenSSL into cross-compiled mobile builds.
-
-OMP Pulse implements RFC 8291 Web Push (`aes128gcm`) and VAPID ES256 signing directly in pure Rust (`p256`, `hkdf`, `sha2`, `aes-gcm`). The daemon seals each <Term tone="sage">notification</Term> into <Term tone="copper">encrypted bytes</Term> before handing it to Google, Apple, or Mozilla's push relay, so the relay never sees your code or replies.
-
-<PushCipherScene client:visible />
-
-Because there are zero C cryptography dependencies in the build tree, the entire server cross-compiles cleanly to Linux, macOS, Windows, and static `aarch64-unknown-linux-musl` for Android in about 20 seconds.
+- **Single-writer routing:** Because terminal `omp` rewrites its JSONL session file from memory, two processes writing at once would overwrite each other. Before spawning a worker, the daemon checks a sidecar lock file, live process arguments, and open file descriptors. When your desktop terminal already owns the session, phone prompts route through the desktop extension instead of spawning a second writer, keeping one owner on disk while both screens stream live.
+- **Zero-OpenSSL Web Push:** To notify your phone when a long run finishes without a custom cloud server or C crypto dependencies, the daemon implements RFC 8291 (`aes128gcm`) and VAPID ES256 signing in pure Rust (`p256`, `hkdf`, `sha2`, `aes-gcm`). Push relays only ever see ciphertext, and the whole binary still cross-compiles cleanly to Linux, macOS, Windows, and static `aarch64-unknown-linux-musl` for Android in about 20 seconds.
 
 ## Source and benchmarks
 
-Everything described here is open-source (MIT) at [github.com/JulianCodespoti/omp-pulse](https://github.com/JulianCodespoti/omp-pulse). All latency, wire, and memory figures come from the reproducible benchmark suite in `docs/internals/performance.md`, and there is a 48-second walkthrough at [juliancodespoti.github.io/omp-pulse](https://juliancodespoti.github.io/omp-pulse/#film).
+Everything here is open-source (MIT) at [github.com/JulianCodespoti/omp-pulse](https://github.com/JulianCodespoti/omp-pulse). All latency, wire, and memory numbers come from the reproducible benchmark suite in `docs/internals/performance.md`, with a 48-second demo at [juliancodespoti.github.io/omp-pulse](https://juliancodespoti.github.io/omp-pulse/#film).
