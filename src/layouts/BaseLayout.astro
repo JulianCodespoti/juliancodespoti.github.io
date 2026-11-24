@@ -1,0 +1,108 @@
+---
+import "@fontsource-variable/inter";
+import "@fontsource-variable/jetbrains-mono";
+import "@fontsource-variable/newsreader";
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description: string;
+  activeNav?: "essays" | "framework";
+  showProgress?: boolean;
+}
+
+const { title, description, activeNav = "essays", showProgress = false } = Astro.props;
+const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
+---
+
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{title}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalUrl} />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <link rel="alternate" type="application/rss+xml" title="Julian Codespoti — Essays" href="/rss.xml" />
+
+    <meta property="og:type" content="article" />
+    <meta property="og:title" content={title} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalUrl} />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={title} />
+    <meta name="twitter:description" content={description} />
+
+    <script is:inline>
+      (() => {
+        try {
+          const saved = localStorage.getItem("jc-theme");
+          if (saved === "light" || saved === "dark") {
+            document.documentElement.dataset.theme = saved;
+          }
+        } catch {}
+      })();
+    </script>
+  </head>
+  <body>
+    {showProgress && (
+      <div class="read-progress" aria-hidden="true">
+        <div class="read-progress-bar" id="read-progress-bar" />
+      </div>
+    )}
+
+    <header class="site-header">
+      <div class="site-header-inner">
+        <a class="site-brand" href="/">
+          <img class="site-brand-mark" src="/favicon.svg" alt="" width="26" height="26" />
+          <span>Julian Codespoti</span>
+        </a>
+        <nav class="site-nav" aria-label="Primary">
+          <a href="/" aria-current={activeNav === "essays" ? "page" : undefined}>Essays</a>
+          <a href="/framework/" aria-current={activeNav === "framework" ? "page" : undefined}>Lab Kit</a>
+          <a href="https://github.com/JulianCodespoti" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="/rss.xml">RSS</a>
+          <button
+            class="theme-btn"
+            id="theme-toggle"
+            type="button"
+            aria-label="Toggle light and dark theme"
+            title="Toggle theme"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="4" />
+              <path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41" />
+            </svg>
+          </button>
+        </nav>
+      </div>
+    </header>
+
+    <slot />
+
+    <footer class="site-footer">
+      <div class="site-footer-inner">
+        <span>Julian Codespoti · Systems engineering &amp; interactive essays</span>
+        <div class="site-footer-links">
+          <a href="/">Essays</a>
+          <a href="/framework/">Lab Kit</a>
+          <a href="https://github.com/JulianCodespoti" target="_blank" rel="noopener noreferrer">GitHub</a>
+          <a href="/rss.xml">RSS</a>
+        </div>
+      </div>
+    </footer>
+
+    <script is:inline>
+      (() => {
+        const btn = document.getElementById("theme-toggle");
+        btn?.addEventListener("click", () => {
+          const cur = document.documentElement.dataset.theme === "light" ? "light" : "dark";
+          const next = cur === "dark" ? "light" : "dark";
+          document.documentElement.dataset.theme = next;
+          try { localStorage.setItem("jc-theme", next); } catch {}
+        });
+      })();
+    </script>
+  </body>
+</html>

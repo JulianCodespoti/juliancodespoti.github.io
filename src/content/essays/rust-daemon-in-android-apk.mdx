@@ -1,0 +1,152 @@
+---
+title: "Running a Single-Binary Rust Daemon Inside an Android APK (Without Root or OpenSSL)"
+subtitle: "How we crammed a tokio/axum daemon, an embedded React PWA, pure-Rust RFC 8291 Web Push, and bounded cellular back-pressure into a single executable that runs both on desktop and inside an unrooted Android phone."
+description: "An interactive systems deep-dive into Android W^X and 16 KB page alignment, zero-OpenSSL Web Push encryption, cellular WebSocket back-pressure that stopped oscillating 123 times, and single-writer JSONL arbitration."
+pubDate: 2026-11-24
+readingTime: "11 min read"
+simsCount: 4
+tags: ["Rust", "Android", "Systems", "WebSockets", "Cryptography"]
+repoUrl: "https://github.com/JulianCodespoti/omp-pulse"
+featured: true
+---
+
+import { Callout, StatGrid } from "../../kit";
+import { ElfAlignmentLab } from "../../sims/android-rust-daemon/ElfAlignmentLab";
+import { BackpressureLab } from "../../sims/android-rust-daemon/BackpressureLab";
+import { WebPushLab } from "../../sims/android-rust-daemon/WebPushLab";
+import { OwnershipLab } from "../../sims/android-rust-daemon/OwnershipLab";
+
+Most ways to drive a terminal coding agent from a phone boil down to SSH into a six-inch screen. My brother and I got tired of squinting at tmux panes on the train, so we built [OMP Pulse](https://github.com/JulianCodespoti/omp-pulse)—a single-binary Rust (`tokio` / `axum`) daemon that embeds its React PWA with `include_dir!`, talks to desktop sessions over Tailscale, and cross-compiles to `aarch64-unknown-linux-musl` so the exact same daemon can run *locally inside an unrooted Android APK* when your laptop is shut.
+
+Getting the happy path working took a week. Everything interesting happened when we hit four real constraints:
+
+1. Modern Android blocks `execve()` from app data *and* Android 15 switched to 16 KB kernel pages.
+2. A slow phone on cellular can turn a 4 KB streaming turn into 244 KB of wire traffic—or make a naive back-pressure queue oscillate 123 times.
+3. Carrying OpenSSL across Linux, macOS, Windows, and Android musl cross-builds is miserable.
+4. Our target CLI (`omp`) rewrites its JSONL session files wholesale from memory, so two concurrent writers silently destroy conversation history.
+
+Every diagram below is interactive—drag the toggles, trigger the failure modes we actually hit, and watch the exact mechanisms we shipped to fix them.
+
+<StatGrid
+  items={[
+    { label: "Streaming turn (4 KB)", value: "244 KB → 25 KB", sub: "9.7× smaller via UTF-16 base_seq deltas", tone: "cyan" },
+    { label: "150 MiB burst (no reader)", value: "+320 MiB → 0 MiB", sub: "Stall latch + visible-audience gate", tone: "emerald" },
+    { label: "OpenSSL dependency", value: "0 bytes", sub: "Pure-Rust RFC 8291 + VAPID ES256", tone: "accent" },
+    { label: "Android 15 ELF check", value: "p_align ≥ 16 KB", sub: "Static non-PIE ET_EXEC in nativeLibraryDir", tone: "amber" },
+  ]}
+/>
+
+---
+
+## 1. Smuggling a Static Rust Executable Past Android W^X and 16 KB Pages
+
+On Android devices targeting API 29 or newer (`targetSdk >= 29`), SELinux enforces W^X: your app's writable data directory (`/data/user/0/<pkg>/files`) is mounted effectively `noexec`. You cannot download a binary, `chmod +x` it, and `execve()` it.
+
+There is one app-owned directory Android *does* permit executing from: `nativeLibraryDir`, where PackageManager unpacks files matching `lib*.so` from the APK's `jniLibs/arm64-v8a/` folder. So our build script compiles the Rust daemon for `aarch64-unknown-linux-musl` and disguises the executable as **`libomppulse.so`** next to `proot`. Inside the Alpine guest, `proot` bind-mounts `nativeLibraryDir` at `/opt/pulse` and runs `/opt/pulse/libomppulse.so` as `omp-pulse`.
+
+Two subtle traps bit us immediately:
+
+- **No dynamic linker on the host:** Alpine's default rustc output links dynamically against `/lib/ld-musl-aarch64.so.1`, which doesn't exist outside the guest. Passing `-C target-feature=+crt-static -C relocation-model=static` produces a self-contained static non-PIE `ET_EXEC` with zero `PT_INTERP` header.
+- **Android 15's 16 KB page-size kernels:** Older toolchains align ELF `PT_LOAD` segments to 4 KB (`0x1000`). On a 16 KB kernel, the read-execute `.text` segment and the read-write `.data` segment can land inside the *same* physical 16 KB page—which the loader rejects immediately.
+
+Try breaking the combination below. Put the binary in App Data, drop `p_align` to `4 KB` on Android 15, or toggle Dynamic linking to see what the kernel loader rejects:
+
+<ElfAlignmentLab client:visible />
+
+Because a wrongly linked or 4 KB-aligned binary still packages into an APK cleanly and only explodes on a user's phone, our build script (`scripts/android/build-runtime.sh`) parses the produced ELF header in Node before Gradle ever touches it:
+
+```js
+if (b.readUInt32BE(0) !== 0x7f454c46 || b[4] !== 2 || b[5] !== 1)
+  fail("not a 64-bit little-endian ELF");
+if (b.readUInt16LE(18) !== 183) fail("not an AArch64 binary");
+if (b.readUInt16LE(16) !== 2) fail("not ET_EXEC (relocation-model=static)");
+
+const phoff = Number(b.readBigUInt64LE(32));
+const phentsize = b.readUInt16LE(54);
+const phnum = b.readUInt16LE(56);
+for (let i = 0; i < phnum; i++) {
+  const p = phoff + i * phentsize;
+  const type = b.readUInt32LE(p);
+  const align = Number(b.readBigUInt64LE(p + 48));
+  if (type === 3) fail("has PT_INTERP (dynamically linked); must be static");
+  if (type === 1 && align < 0x4000)
+    fail(`LOAD segment aligned to ${align} B; 16 KB devices need >= 16384`);
+}
+```
+
+<Callout title="One funny invariant we almost missed" tone="warn">
+  The desktop daemon serves its own downloadable <code>public/app-release.apk</code> via <code>include_dir!</code>.
+  If you compile the Android runtime daemon while <code>public/app-release.apk</code> is still sitting in <code>public/</code>,
+  <code>libomppulse.so</code> embeds the previous release's APK—nesting every prior APK inside the next one forever.
+  <code>build-runtime.sh</code> atomically parks the APK outside <code>public/</code> with an <code>EXIT</code> trap before calling Cargo.
+</Callout>
+
+---
+
+## 2. Cellular Back-Pressure and the Bug That Oscillated 123 Times
+
+Streaming tokens over a WebSocket looks trivial on localhost. On a cellular phone riding through a subway tunnel while a coding agent dumps build logs into a session file, two things go sideways fast:
+
+1. **Quadratic wire amplification:** Sending the updated assistant message on every chunk meant a single **4,228-character** reply burned **244,174 bytes** on the wire (`57.8×` amplification!).
+2. **Queue overflow oscillation:** We added a bounded per-client queue: past the ceiling, drop the queue and push a single tiny `resync` frame telling the phone to refetch cleanly over compressed HTTP.
+
+When we actually benchmarked that "bounded" queue under a 150 MiB append storm, it **oscillated 123 times** and still spiked daemon RSS by **+321 MiB**.
+
+Why? Because a `resync` frame is only ~200 bytes. Dropping an overflowed queue down to one 200-byte frame *immediately restored queue headroom*—so the file watcher happily resumed parsing and refilling the queue 123 times in a row.
+
+Play with the live simulation below. Switch to **Clear-Only (Bug)**, set the link to **Tunnel Drop**, and hit **150 MiB Burst** to watch the oscillation happen in real time—then compare it with our **3-Ceiling + Stall Latch** and **Phone: Locked** mode:
+
+<BackpressureLab client:visible />
+
+Three refinements fixed both wire bloat and memory spikes:
+
+- **UTF-16 `base_seq` suffix-replacement deltas:** Every frame carries canonical full `text` plus an optional `{ base_seq, keep, append }` delta. A fast client at `seq == base_seq` receives only the delta; a client that fell behind or had frames conflated automatically receives a full snapshot. Counting `keep` in **UTF-16 code units** (matching JavaScript's `String.prototype.slice`) means a delta boundary never splits a surrogate-pair emoji—and handling common-prefix replacements instead of pure appends avoided giving up when `omp` normalized trailing whitespace at turn end. Result on the exact same 4,228-char turn: **244,174 B → 25,290 B (9.7× smaller)**.
+- **Three ceilings, not one:** A frame-count ceiling (staleness), a byte ceiling (a single log frame can be megabytes), and a **stall latch** that stays shut once tripped until the client actually drains and catches up via paged HTTP.
+- **Only a visible audience keeps the watcher awake:** A locked phone keeps its WebSocket open, so naively checking "is any socket connected?" kept the watcher burning CPU and proot-trapped `stat()` syscalls in your pocket. Now `WsHub::has_audience()` counts only *visible* clients with queue headroom. A 150 MiB append with no visible reader costs **+0 MiB RSS**, and unlocking the phone triggers one clean `resync`.
+
+---
+
+## 3. Pure-Rust RFC 8291 Web Push Without OpenSSL
+
+We wanted `omp-pulse` to have **zero** cloud server and **zero** Firebase SDK—meaning the daemon itself has to encrypt and deliver Web Push notifications directly to Apple, Google, and Mozilla push relays.
+
+Most off-the-shelf Web Push crates pull in `openssl-sys`. Cross-compiling OpenSSL cleanly across `x86_64` and `aarch64` Linux musl, macOS Intel/Apple Silicon, Windows MSVC, and Android arm64 is a build-system tax you pay forever.
+
+It turns out RFC 8291 (`aes128gcm` Web Push encryption) plus VAPID ES256 signing is only a few hundred lines of pure Rust on top of four audited crates we already trusted: `p256` (with `ecdsa`), `hkdf`, `sha2`, and `aes-gcm`.
+
+Type any notification below and step through the five stages—or flip between **What Push Relay Sees** and **What Your Phone Decrypts** and click individual byte regions in the wire frame:
+
+<WebPushLab client:visible />
+
+With zero C TLS/crypto dependencies in the tree, `cargo zigbuild --release --target aarch64-unknown-linux-musl` produces a reproducible static binary in ~20 seconds with no `PKG_CONFIG_PATH` gymnastics.
+
+---
+
+## 4. Dual-Device Sync Without Clobbering a Single-Writer File
+
+The trickiest architectural constraint had nothing to do with Android or Rust: **`omp` rewrites its JSONL session file wholesale from memory.**
+
+If a desktop terminal has a conversation open and the daemon naively spawns a second `omp --mode rpc-ui` child against the same file when you tap Send on your phone, both processes think they own the transcript. The moment the desktop terminal flushes its next turn, every message your phone wrote disappears off disk.
+
+Try it yourself below in **Naive (2 Writers)** mode: click **Send from Phone**, then **Send from Desktop**, and watch the phone's turn get wiped out on disk. Then switch to **Pulse 3-Layer Guard**:
+
+<OwnershipLab client:visible />
+
+Because no single OS mechanism detects every open session on every platform, our ownership guard (`src/authority/guard.rs` and `owner.rs`) stacks **three explicit layers**, each with a documented blind spot:
+
+1. **Sidecar lock file** — works on Linux, macOS, and Windows, and is the only layer that catches a terminal session before its first write.
+2. **Process argument scan (`sysinfo`)** — cross-platform check for running `omp` processes referencing the session path.
+3. **Open file descriptors** — `/proc/<pid>/fd` on Linux and `libproc` on macOS (honestly reported as absent on Windows by `omp-pulse doctor`).
+
+Whenever a foreign desktop owner is detected, the daemon refuses to spawn a second writer. If the desktop session runs our thin bridge extension (or native Collab), Pulse forwards phone prompts *into* the desktop process so there is still exactly **one writer** on disk. If not, the phone fails closed and tells you how to share the session rather than guessing.
+
+---
+
+## Honest Boundaries & Code
+
+None of these tricks are magic, and two caveats stay front and center in the project's docs:
+
+- **Android phone mode is not a security sandbox.** `proot` translates paths in userspace; commands the agent runs share the Pulse app's Android UID and permissions.
+- **Single-harness depth over breadth.** Pulse targets [Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi) rather than trying to wrap every CLI over a lowest-common-denominator PTY.
+
+All of the code behind these four labs—the ELF verifier, the `WsHub` back-pressure bench probes, the pure-Rust `webpush.rs` implementation, and the three-layer authority guard—is MIT-licensed at [github.com/JulianCodespoti/omp-pulse](https://github.com/JulianCodespoti/omp-pulse) (with a 48-second demo at [juliancodespoti.github.io/omp-pulse](https://juliancodespoti.github.io/omp-pulse/#film)).

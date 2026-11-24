@@ -1,0 +1,73 @@
+---
+import BaseLayout from "../layouts/BaseLayout.astro";
+---
+
+<BaseLayout
+  title="Interactive Essay Lab Kit — Julian Codespoti"
+  description="The reusable Astro + MDX + React simulation framework powering interactive technical articles on this site."
+  activeNav="framework"
+>
+  <main class="page-shell">
+    <div class="hero-eyebrow">
+      <span class="hero-dot" aria-hidden="true"></span>
+      <span>Reusable authoring kit · src/kit/</span>
+    </div>
+
+    <h1 class="home-title">How these interactive articles are built.</h1>
+    <p class="home-lead">
+      Writing an interactive systems article should feel like writing Markdown with drop-in live laboratories—never
+      rebuilding scroll spies, dark/light themes, offscreen animation pausing, or accessible controls from scratch.
+    </p>
+
+    <div class="stat-grid" style="margin-bottom: 2.5rem;">
+      <div class="stat-card">
+        <div class="stat-label">Prose JS overhead</div>
+        <div class="stat-value" style="color: var(--emerald);">0 KB</div>
+        <div class="stat-sub">Static HTML via Astro + Shiki; islands hydrate on viewport entry.</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Offscreen CPU</div>
+        <div class="stat-value" style="color: var(--cyan);">Paused</div>
+        <div class="stat-sub">Shared <code>useStageVisibility()</code> halts rAF loops automatically.</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Authoring format</div>
+        <div class="stat-value" style="color: var(--accent-strong);">MDX</div>
+        <div class="stat-sub">Drop a new <code>.mdx</code> in <code>src/content/essays/</code> and push.</div>
+      </div>
+    </div>
+
+    <div class="essay-prose">
+      <h2>Reusable primitives in <code>src/kit/</code></h2>
+      <ul>
+        <li><code>&lt;LabStage&gt;</code> — Full-bleed framed laboratory container with kicker badge, live telemetry <code>&lt;MetricPill&gt;</code> bar, dot-grid simulation stage, bottom control bar, and semantic caption.</li>
+        <li><code>&lt;Slider&gt;</code>, <code>&lt;Segmented&gt;</code>, <code>&lt;Toggle&gt;</code>, <code>&lt;ActionButton&gt;</code> — Keyboard-accessible, tabular-num controls styled consistently across dark and warm-paper light themes.</li>
+        <li><code>&lt;Scrubber&gt;</code> — Multi-step walkthrough controller with Play/Pause auto-advance, Prev/Next stepping, and synchronized step cards.</li>
+        <li><code>useStageVisibility()</code> — Shared React hook wiring <code>IntersectionObserver</code> + <code>prefers-reduced-motion</code> so 60fps canvas labs never burn battery offscreen.</li>
+        <li><code>&lt;Callout&gt;</code> &amp; <code>&lt;StatGrid&gt;</code> — Editorial callouts and measured benchmark grids that break out cleanly beyond the 68ch reading measure.</li>
+      </ul>
+
+      <h2>Adding a new interactive article</h2>
+      <p>Create <code>src/content/essays/my-topic.mdx</code> with frontmatter, build your simulation islands under <code>src/sims/my-topic/</code>, and mount them with <code>client:visible</code>:</p>
+
+      <pre><code>{`---
+title: "My Interactive Systems Post"
+subtitle: "Why the obvious implementation breaks under real load."
+description: "An interactive walkthrough..."
+pubDate: 2026-12-01
+readingTime: "10 min read"
+simsCount: 3
+tags: ["Rust", "Networking"]
+---
+import { MyLab } from "../../sims/my-topic/MyLab";
+
+Here is what happens when packets back up:
+
+<MyLab client:visible />`}</code></pre>
+
+      <p>
+        Push to <code>main</code> and GitHub Actions builds and publishes the static bundle straight to GitHub Pages.
+      </p>
+    </div>
+  </main>
+</BaseLayout>
