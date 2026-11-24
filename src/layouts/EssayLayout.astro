@@ -1,5 +1,4 @@
 ---
-import type { MarkdownHeading } from "astro";
 import BaseLayout from "./BaseLayout.astro";
 
 interface Props {
@@ -8,91 +7,34 @@ interface Props {
   description: string;
   pubDate: Date;
   readingTime: string;
-  simsCount: number;
-  tags: string[];
   repoUrl?: string;
-  headings: MarkdownHeading[];
 }
 
-const { title, subtitle, description, pubDate, readingTime, simsCount, tags, repoUrl, headings } = Astro.props;
-const tocHeadings = headings.filter((h) => h.depth === 2);
+const { title, subtitle, description, pubDate, readingTime, repoUrl } = Astro.props;
 const formattedDate = pubDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 ---
 
-<BaseLayout title={`${title} — Julian Codespoti`} description={description} activeNav="essays" showProgress={true}>
-  <div class="essay-shell">
-    <aside class="essay-toc" aria-label="On this page">
-      <p class="essay-toc-title">Contents</p>
-      <ol>
-        {tocHeadings.map((h) => (
-          <li>
-            <a href={`#${h.slug}`} data-toc-link={h.slug}>{h.text}</a>
-          </li>
-        ))}
-      </ol>
-    </aside>
-
-    <article class="essay-main">
+<BaseLayout title={`${title} - Julian Codespoti`} description={description} activeNav="essays">
+  <main class="col-page">
+    <article>
       <header class="essay-header">
-        <div class="essay-card-meta">
+        <div class="essay-meta">
           <time datetime={pubDate.toISOString()}>{formattedDate}</time>
-          <span>·</span>
-          <span>{readingTime}</span>
-          {simsCount > 0 && (
-            <span class="sim-badge">{simsCount} interactive simulations</span>
-          )}
-        </div>
-        <h1 class="essay-title">{title}</h1>
-        <p class="essay-subtitle">{subtitle}</p>
-        <div class="tag-row">
-          {tags.map((tag) => (
-            <span class="tag-pill">{tag}</span>
-          ))}
+          <span> / {readingTime}</span>
           {repoUrl && (
-            <a class="tag-pill" href={repoUrl} target="_blank" rel="noopener noreferrer" style="color: var(--accent-strong); border-color: var(--accent-border);">
-              Source repo ↗
-            </a>
+            <>
+              <span> / </span>
+              <a href={repoUrl} target="_blank" rel="noopener noreferrer">source</a>
+            </>
           )}
         </div>
+        <h1 class="page-title">{title}</h1>
+        <p class="page-sub" style="margin-bottom: 0;">{subtitle}</p>
       </header>
 
       <div class="essay-prose">
         <slot />
       </div>
     </article>
-  </div>
-
-  <script is:inline>
-    (() => {
-      const bar = document.getElementById("read-progress-bar");
-      const updateProgress = () => {
-        if (!bar) return;
-        const max = document.documentElement.scrollHeight - window.innerHeight;
-        const pct = max > 0 ? Math.min(100, Math.max(0, (window.scrollY / max) * 100)) : 0;
-        bar.style.width = `${pct}%`;
-      };
-      window.addEventListener("scroll", updateProgress, { passive: true });
-      updateProgress();
-
-      const links = Array.from(document.querySelectorAll("[data-toc-link]"));
-      const sections = links
-        .map((a) => ({ a, el: document.getElementById(a.getAttribute("data-toc-link") || "") }))
-        .filter((pair) => pair.el);
-
-      if (sections.length && "IntersectionObserver" in window) {
-        const obs = new IntersectionObserver(
-          (entries) => {
-            for (const entry of entries) {
-              if (entry.isIntersecting) {
-                const id = entry.target.id;
-                links.forEach((l) => l.classList.toggle("active", l.getAttribute("data-toc-link") === id));
-              }
-            }
-          },
-          { rootMargin: "-15% 0px -70% 0px" },
-        );
-        sections.forEach(({ el }) => el && obs.observe(el));
-      }
-    })();
-  </script>
+  </main>
 </BaseLayout>

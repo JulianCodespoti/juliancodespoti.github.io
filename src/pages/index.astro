@@ -8,59 +8,32 @@ const essays = (await getCollection("essays", ({ data }) => !data.draft)).sort(
 ---
 
 <BaseLayout
-  title="Julian Codespoti — Interactive Systems Essays"
-  description="Interactive deep-dives into systems programming, Rust, Android internals, protocols, and mobile tooling."
+  title="Julian Codespoti"
+  description="Interactive technical notes on Rust, Android, networking, and local-first tools."
   activeNav="essays"
 >
-  <main class="page-shell">
-    <div class="hero-eyebrow">
-      <span class="hero-dot" aria-hidden="true"></span>
-      <span>Interactive systems essays · Zero-JS prose + live simulation labs</span>
-    </div>
-
-    <h1 class="home-title">Systems you can poke at, not just read about.</h1>
-    <p class="home-lead">
-      Engineering deep-dives on Rust daemons, Android runtime quirks, network protocols, and back-pressure—built with
-      playable browser simulations so you can drag the sliders, break the invariants, and watch the failure modes live.
+  <main class="col-page">
+    <h1 class="page-title">Essays</h1>
+    <p class="page-sub">
+      Notes on systems bugs, protocols, and mobile runtime quirks, with small interactive diagrams so you can poke at each mechanism yourself.
     </p>
 
-    <section aria-label="Published essays" style="display: flex; flex-direction: column; gap: 1.5rem;">
+    <ul class="essay-list">
       {essays.map((essay) => {
         const date = essay.data.pubDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
         return (
-          <a class="essay-card" href={`/essays/${essay.slug}/`}>
-            <div class="essay-card-meta">
-              <time datetime={essay.data.pubDate.toISOString()}>{date}</time>
-              <span>·</span>
-              <span>{essay.data.readingTime}</span>
-              {essay.data.simsCount > 0 && (
-                <span class="sim-badge">{essay.data.simsCount} interactive labs</span>
-              )}
-            </div>
-            <h2>{essay.data.title}</h2>
-            <p>{essay.data.subtitle}</p>
-            <div class="tag-row">
-              {essay.data.tags.map((tag) => (
-                <span class="tag-pill">{tag}</span>
-              ))}
-            </div>
-          </a>
+          <li>
+            <a href={`/essays/${essay.slug}/`}>
+              <div class="essay-list-meta">
+                <time datetime={essay.data.pubDate.toISOString()}>{date}</time>
+                <span> / {essay.data.readingTime}</span>
+              </div>
+              <h2>{essay.data.title}</h2>
+              <p>{essay.data.subtitle}</p>
+            </a>
+          </li>
         );
       })}
-    </section>
-
-    <section
-      style="margin-top: 4rem; padding-top: 2.25rem; border-top: 1px solid var(--border-subtle); display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 1rem;"
-    >
-      <div style="max-width: 56ch;">
-        <h3 style="margin: 0 0 0.35rem; font-size: 1rem;">Built on a reusable MDX interactive essay kit</h3>
-        <p style="margin: 0; font-size: 0.92rem; color: var(--fg-muted);">
-          Every essay ships static HTML prose and hydrates only its interactive simulation stages when scrolled into view.
-        </p>
-      </div>
-      <a class="kit-btn kit-btn--primary" href="/framework/" style="text-decoration: none;">
-        Explore the Lab Kit →
-      </a>
-    </section>
+    </ul>
   </main>
 </BaseLayout>
