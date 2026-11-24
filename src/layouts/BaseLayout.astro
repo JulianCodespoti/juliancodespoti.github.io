@@ -8,10 +8,10 @@ import "../styles/global.css";
 interface Props {
   title: string;
   description: string;
-  activeNav?: "essays" | "framework";
+  activeNav?: "posts" | "framework";
 }
 
-const { title, description, activeNav = "essays" } = Astro.props;
+const { title, description, activeNav = "posts" } = Astro.props;
 const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
 ---
 
@@ -45,7 +45,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
           <span>Julian Codespoti</span>
         </a>
         <nav class="site-nav" aria-label="Primary">
-          <a href="/" aria-current={activeNav === "essays" ? "page" : undefined}>Essays</a>
+          <a href="/" aria-current={activeNav === "posts" ? "page" : undefined}>Posts</a>
           <a href="/framework/" aria-current={activeNav === "framework" ? "page" : undefined}>Engine</a>
           <a href="https://github.com/JulianCodespoti" target="_blank" rel="noopener noreferrer">GitHub</a>
           <button type="button" class="theme-pill" id="theme-toggle" aria-label="Switch color theme">
@@ -61,7 +61,7 @@ const canonicalUrl = new URL(Astro.url.pathname, Astro.site);
       <div class="site-footer-inner">
         <span>Julian Codespoti</span>
         <div style="display: flex; gap: 1rem;">
-          <a href="/">Essays</a>
+          <a href="/">Posts</a>
           <a href="/framework/">Engine</a>
           <a href="https://github.com/JulianCodespoti" target="_blank" rel="noopener noreferrer">GitHub</a>
           <a href="/rss.xml">RSS</a>

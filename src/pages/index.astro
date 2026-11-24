@@ -2,34 +2,34 @@
 import { getCollection } from "astro:content";
 import BaseLayout from "../layouts/BaseLayout.astro";
 
-const essays = (await getCollection("essays", ({ data }) => !data.draft)).sort(
+const posts = (await getCollection("posts", ({ data }) => !data.draft)).sort(
   (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
 );
 ---
 
 <BaseLayout
   title="Julian Codespoti"
-  description="Interactive technical notes on Rust, Android, networking, and local-first tools."
-  activeNav="essays"
+  description="Interactive deep-dives on how systems work: memory, streaming, networking, and local-first tools."
+  activeNav="posts"
 >
   <main class="col-page">
-    <h1 class="page-title">Essays</h1>
+    <h1 class="page-title">Posts</h1>
     <p class="page-sub">
-      Notes on systems bugs, protocols, and mobile runtime quirks, with small interactive diagrams so you can poke at each mechanism yourself.
+      Interactive breakdowns of how software actually works under the hood, with small live visuals so you can see every mechanism in motion.
     </p>
 
-    <ul class="essay-list">
-      {essays.map((essay) => {
-        const date = essay.data.pubDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
+    <ul class="post-list">
+      {posts.map((post) => {
+        const date = post.data.pubDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
         return (
           <li>
-            <a href={`/essays/${essay.slug}/`}>
-              <div class="essay-list-meta">
-                <time datetime={essay.data.pubDate.toISOString()}>{date}</time>
-                <span> / {essay.data.readingTime}</span>
+            <a href={`/posts/${post.slug}/`}>
+              <div class="post-list-meta">
+                <time datetime={post.data.pubDate.toISOString()}>{date}</time>
+                <span> / {post.data.readingTime}</span>
               </div>
-              <h2>{essay.data.title}</h2>
-              <p>{essay.data.subtitle}</p>
+              <h2>{post.data.title}</h2>
+              <p>{post.data.subtitle}</p>
             </a>
           </li>
         );

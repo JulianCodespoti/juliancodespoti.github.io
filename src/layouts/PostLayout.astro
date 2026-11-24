@@ -14,11 +14,11 @@ const { title, subtitle, description, pubDate, readingTime, repoUrl } = Astro.pr
 const formattedDate = pubDate.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 ---
 
-<BaseLayout title={`${title} - Julian Codespoti`} description={description} activeNav="essays">
+<BaseLayout title={`${title} - Julian Codespoti`} description={description} activeNav="posts">
   <main class="col-page">
     <article>
-      <header class="essay-header">
-        <div class="essay-meta">
+      <header class="post-header">
+        <div class="post-meta">
           <time datetime={pubDate.toISOString()}>{formattedDate}</time>
           <span> / {readingTime}</span>
           {repoUrl && (
@@ -32,7 +32,7 @@ const formattedDate = pubDate.toLocaleDateString("en-US", { year: "numeric", mon
         <p class="page-sub" style="margin-bottom: 0;">{subtitle}</p>
       </header>
 
-      <div class="essay-prose">
+      <div class="post-prose">
         <slot />
       </div>
     </article>
