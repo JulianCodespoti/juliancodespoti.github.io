@@ -194,7 +194,7 @@ fs.mkdirSync(outDir, { recursive: true });
 
 await renderPng("home.png", {
   title: "Hey, I'm Julian.",
-  subtitle: "Local-first tools in Rust and live interactive explorations of how systems behave under real constraints.",
+  subtitle: "Local-first tools in Rust and interactive notes on how software actually works.",
   meta: "spoti.sh",
 });
 
