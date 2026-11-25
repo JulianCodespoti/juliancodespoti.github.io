@@ -1,0 +1,49 @@
+---
+title: "Why 0.1 + 0.2 Isn't 0.3 (and Why Minecraft Has the Far Lands)"
+subtitle: "How IEEE 754 packs huge ranges into fixed bits, why the gap between numbers doubles at every power of two, and when x + 1 stops moving."
+description: "An interactive exploration of IEEE 754 floating-point bits, repeating binary fractions, doubling ULP gaps, and why large game-world coordinates lose precision."
+pubDate: 2026-11-26
+readingTime: "5 min read"
+simsCount: 2
+tags: ["Systems", "Hardware", "Math"]
+preview: "why-floating-point-breaks"
+featured: true
+---
+
+import { Cue } from "../../ui";
+import {
+  FloatBitsFigure,
+  NumberLineZoomFigure,
+} from "../../figures/why-floating-point-breaks/Figures";
+
+Every programmer hits `0.1 + 0.2 === 0.30000000000000004` in their first month, shrugs, blames floating-point math, and moves on. What gets skipped is that the exact same design decision also explains why old versions of Minecraft shattered into surreal terrain walls if you walked millions of blocks from spawn, and why adding `1` to a large float can silently return the original number unchanged.
+
+The trick is simple once you see the bits.
+
+## Fixed bits, repeating binary fractions
+
+A 16-bit float (IEEE 754 `binary16`, the compact cousin of the 32-bit and 64-bit floats in your CPU and GPU) splits its 16 bits into three fields: 1 <Cue tone="copper">sign</Cue> bit, 5 <Cue tone="teal">exponent</Cue> bits that pick which power-of-two bucket you're in, and 10 <Cue tone="sage">mantissa</Cue> bits that place you inside that bucket.
+
+In base 10, `1/3` never terminates (`0.33333...`) because 3 doesn't divide 10. In base 2, `1/10` has the exact same problem: `0.1` in binary is `0.00011001100110011...` repeating forever. Since a float only has a fixed number of mantissa bits, the hardware chops the repeating tail off and rounds to the nearest pattern it can fit.
+
+That is why `0.1` starts pre-loaded below with that unmistakable `1001100110` repeating mantissa. Flip any bit directly to see how the exponent scales the whole number while the mantissa fine-tunes inside the bucket.
+
+<FloatBitsFigure client:visible />
+
+Notice one nice surprise when you click between `0.1` and `0.2`: their mantissa bits are completely identical (`1001100110`). Doubling a float doesn't touch the mantissa at all; it just bumps the exponent by 1.
+
+## Why the number line stretches out (and `x + 1 === x`)
+
+That exponent trick lets a tiny 16-bit number reach all the way up to `65,504` while still representing numbers smaller than `0.0001`. There's no free lunch, though.
+
+Every power-of-two interval (`[1, 2]`, `[2, 4]`, `[1024, 2048]`, `[2048, 4096]`) gets the **exact same number of mantissa ticks** (1,024 steps in `binary16`, or 8,388,608 steps in 32-bit `float`). Because each interval is twice as wide as the one before it, the gap between consecutive representable floats doubles every time you cross a power of two.
+
+Between `1` and `2`, the ticks are `0.00098` apart. By the time you reach `1024`, those same 1,024 ticks are spaced `1.0` apart. Step past `2048`, and the gap widens to `2.0`.
+
+Try to compute `2048 + 1` in `binary16`: the true answer `2049` lands dead in the empty void halfway between `2048` and `2050`, and IEEE 754 round-to-nearest-even snaps it straight back to `2048`. Your counter stops moving forever.
+
+<NumberLineZoomFigure client:visible />
+
+In 32-bit floats (`f32`), the exact same cliff happens at `2^24 = 16,777,216`. Past that coordinate in a game engine, you can no longer nudge a vertex by 1 unit, physics steps quantize into visible jumps, and noise generators start feeding stair-stepped inputs that tear smooth terrain into jagged walls.
+
+That's why modern engines either switch world coordinates to 64-bit doubles (`2^53`, where the gap stays tiny out to astronomical distances) or periodically recenter the world origin around the player so you never walk far enough from `0` for the ticks to spread apart.

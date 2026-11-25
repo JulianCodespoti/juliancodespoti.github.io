@@ -1,0 +1,47 @@
+---
+title: "How GPS Finds You Using a Bad Clock"
+subtitle: "Why a one-microsecond error in your phone's clock puts you 300 meters off, and how adding one extra satellite cancels the drift out."
+description: "An interactive 2D visualization of satellite trilateration, pseudorange clock bias, and how a real Gauss-Newton solver recovers both your position and your phone's hidden clock error."
+pubDate: 2026-11-27
+readingTime: "5 min read"
+simsCount: 2
+tags: ["Hardware", "Math", "Systems"]
+preview: "how-gps-solves-clock-drift"
+featured: true
+---
+
+import { Cue } from "../../ui";
+import {
+  ClockDriftSolverFigure,
+  TrilaterationFigure,
+} from "../../figures/how-gps-solves-clock-drift/Figures";
+
+GPS satellites don't track your phone. They just broadcast a steady radio signal that says, *"I am Satellite 14, here is my exact orbit, and the time right now is 12:00:00.000000000."*
+
+Your phone listens to that timestamp, compares it against its own clock, multiplies the travel time by the speed of light, and gets its distance from the satellite.
+
+That sounds straightforward until you check the numbers. Light travels roughly **300 meters in one microsecond**. Satellites carry rubidium and cesium atomic clocks accurate to a few nanoseconds, while your phone carries a cheap quartz oscillator that drifts by milliseconds. If your phone's clock is off by just one microsecond, every distance measurement is wrong by 300 meters, which is useless for turn-by-turn navigation.
+
+The way GPS works around a terrible receiver clock is one of the cleanest math tricks in engineering.
+
+## First, trilateration with a perfect clock
+
+Start on a flat 2D map and pretend your phone's clock is magically synced to the satellites. Knowing your distance from one satellite puts you somewhere on a circle around it. Add a second satellite and the two circles intersect at **two** spots: your real location and a <Cue tone="crimson">mirror twin</Cue>. A third satellite breaks the tie and pins down your exact `(x, y)`.
+
+Drag the green dot around below to see why two circles aren't enough even with a perfect clock.
+
+<TrilaterationFigure client:visible />
+
+## Now break the phone's clock
+
+In reality, your phone's clock has some unknown offset `b`. Because you compare every satellite's timestamp against the **same** faulty local clock, every measured distance (called a *pseudorange*) is shifted by the exact same amount `b * c`.
+
+If your clock is running `0.32` microseconds fast, all three circles grow by `96` meters at the same time. They no longer meet at a single point; instead, they pull apart and leave an empty <Cue tone="crimson">error zone</Cue> in the middle where no location satisfies all three circles.
+
+Here is the trick. Since all three circles are wrong by the exact same unknown radius offset `b`, you don't have two unknowns (`x, y`) anymore; you have **three** (`x, y, b`). And three circles give you three equations.
+
+Hit **Solve clock offset** below to run a real Gauss-Newton solver in your browser. It nudges `(x, y)` and shrinks or expands all three rings together until the mismatch drops to zero, recovering both your <Cue tone="sage">exact position</Cue> and your phone's hidden clock error to the nanosecond.
+
+<ClockDriftSolverFigure client:visible />
+
+Real GPS simply moves this exact geometry up one dimension. In 3D space you have four unknowns (`x`, `y`, `z`, and your phone's clock bias `b`), which is why your phone needs a lock on at least **four** satellites to get a fix. As a side effect, the moment your phone solves for your location, it also turns its cheap quartz chip into a nanosecond-accurate atomic-synced clock for free.
