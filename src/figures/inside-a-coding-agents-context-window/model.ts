@@ -1,7 +1,38 @@
 import { clamp } from "../../runtime/canvas/math";
 
 /* ==========================================================================
-   1. Causal Attention Dependency Model (Why Prefix Caching Breaks Left->Right)
+   1. Real-Shaped 18-Turn Coding Session Anatomy (Hover/Click Inspector)
+   ========================================================================== */
+
+export type SliceCategory = "system" | "tools" | "user" | "code" | "logs";
+
+export interface SessionSlice {
+  id: string;
+  label: string;
+  category: SliceCategory;
+  tokens: number;
+  preview: string;
+}
+
+export const SESSION_SLICES: readonly SessionSlice[] = [
+  { id: "sys", label: "System prompt", category: "system", tokens: 3_100, preview: "Role instructions, repo rules, formatting guidelines" },
+  { id: "tools", label: "8 tool schemas", category: "tools", tokens: 3_600, preview: "JSON schemas for read, edit, write, grep, find, bash" },
+  { id: "u1", label: "User prompt #1", category: "user", tokens: 180, preview: "\"Fix the slow-consumer RSS spike in ws.rs\"" },
+  { id: "f1", label: "Read ws.rs", category: "code", tokens: 5_400, preview: "src/server/ws.rs (lines 1..420)" },
+  { id: "f2", label: "Read delta.rs", category: "code", tokens: 4_900, preview: "src/server/delta.rs (lines 1..360)" },
+  { id: "g1", label: "grep queue", category: "logs", tokens: 3_200, preview: "84 matches across src/ and tests/" },
+  { id: "t1", label: "cargo test (uncropped failure)", category: "logs", tokens: 19_800, preview: "Full backtraces + 480 lines of verbose tokio debug output" },
+  { id: "e1", label: "Edit ws.rs", category: "code", tokens: 850, preview: "Add stalled AtomicBool latch + resync_if_full()" },
+  { id: "t2", label: "cargo test (pass)", category: "logs", tokens: 620, preview: "test result: ok. 105 passed; 0 failed" },
+  { id: "f3", label: "Read perf test", category: "code", tokens: 4_100, preview: "bench/mem.py slow-consumer fixture" },
+  { id: "u2", label: "User prompt #2", category: "user", tokens: 120, preview: "\"Also park the watcher when the phone screen locks\"" },
+  { id: "e2", label: "Edit watcher.rs", category: "code", tokens: 1_330, preview: "Wire WsHub::has_audience() wake hook" },
+] as const;
+
+export const SESSION_TOTAL_TOKENS = SESSION_SLICES.reduce((acc, s) => acc + s.tokens, 0);
+
+/* ==========================================================================
+   2. Causal Attention Dependency Model (Why Prefix Caching Breaks Left->Right)
    ========================================================================== */
 
 export interface CausalBlock {
@@ -19,8 +50,8 @@ export const CAUSAL_BLOCKS: readonly CausalBlock[] = [
 ] as const;
 
 export interface CausalCacheState {
-  editedIndex: number; // 0..CAUSAL_BLOCKS.length - 1
-  ripple: number; // 0..1 wave traveling strictly rightward along causal arcs
+  editedIndex: number;
+  ripple: number;
 }
 
 export function createCausalCache(initialIndex = 1): CausalCacheState {
@@ -48,33 +79,27 @@ export function getCausalCacheStats(state: CausalCacheState) {
   });
   const totalK = cachedK + recomputedK;
   const hitRate = totalK > 0 ? cachedK / totalK : 0;
-  // Standard 10:1 uncached vs cached pricing ($3/M vs $0.30/M)
   const costCents = (cachedK * 0.03 + recomputedK * 0.3) / 10;
   const fullCostCents = (totalK * 0.3) / 10;
   return { cachedK, recomputedK, totalK, hitRate, costCents, fullCostCents };
 }
 
 /* ==========================================================================
-   2. 2D Quadratic Turn x Token Triangle Model (O(N^2) vs O(N) vs Compaction)
+   3. 2D Quadratic Turn x Token Triangle Model (O(N^2) vs O(N) vs Compaction)
    ========================================================================== */
 
 export type TriangleMode = "uncached" | "cached" | "summarize";
-
 export type CellState = "cached" | "new" | "miss";
 
 export interface TriangleRow {
   turn: number;
-  cells: CellState[]; // each cell = 2K tokens
+  cells: CellState[];
   turnCostCents: number;
 }
 
 export const CELL_TOKENS_K = 2;
 export const TRIANGLE_TURNS = 12;
 
-/**
- * Generates a 12-turn coding session where each square = 2K tokens.
- * Prefix starts at 3 cells (6K: system + tools) and each turn adds 1 new cell (2K).
- */
 export function buildTurnTriangle(mode: TriangleMode): {
   rows: TriangleRow[];
   totalTokensK: number;
@@ -83,7 +108,7 @@ export function buildTurnTriangle(mode: TriangleMode): {
   cachedCells: number;
 } {
   const rows: TriangleRow[] = [];
-  let prefixCells = 3; // 6K system + tools
+  let prefixCells = 3;
   let totalCostCents = 0;
   let uncachedCells = 0;
   let cachedCells = 0;
@@ -103,12 +128,10 @@ export function buildTurnTriangle(mode: TriangleMode): {
       }
       prefixCells += 1;
     } else {
-      // Summarize every 4 turns: shrinks middle history by ~3 cells, but rewrites the prefix -> full cache miss!
       if (turn === 1) {
         for (let i = 0; i < prefixCells + 1; i++) cells.push("new");
         prefixCells += 1;
       } else if (turn % 4 === 0) {
-        // System+tools (3 cells) survive, compressed summary + remaining history (smaller row) must all recompute!
         const shrunkHistory = Math.max(2, Math.round((prefixCells - 3) * 0.55) + 1);
         for (let i = 0; i < 3; i++) cells.push("cached");
         for (let i = 0; i < shrunkHistory + 1; i++) cells.push("miss");
@@ -130,7 +153,6 @@ export function buildTurnTriangle(mode: TriangleMode): {
     cachedCells += rowCached;
     uncachedCells += rowFull;
 
-    // 1 cell = 2K tokens: $0.30/M cached = 0.06c per cell; $3.00/M uncached = 0.60c per cell
     const turnCostCents = rowCached * 0.06 + rowFull * 0.6;
     totalCostCents += turnCostCents;
     rows.push({ turn, cells, turnCostCents });
@@ -142,5 +164,66 @@ export function buildTurnTriangle(mode: TriangleMode): {
     totalCostCents,
     uncachedCells,
     cachedCells,
+  };
+}
+
+/* ==========================================================================
+   4. Harness Configuration Budget Model (20-turn compound cost sandbox)
+   ========================================================================== */
+
+export interface HarnessConfig {
+  staticSystem: boolean; // false = live timestamp in block 0 -> 0% cache hit!
+  leanTools: boolean; // true = 8 tools (3.6K), false = 45 MCP tools (20.2K)
+  capLogs: boolean; // true = 1.8K/turn avg growth, false = 5.4K/turn with raw test dumps
+}
+
+export interface HarnessBudgetResult {
+  finalContextK: number;
+  totalInputK: number;
+  cachedHitRate: number;
+  totalCostUsd: number;
+  turnCostsUsd: number[];
+}
+
+export function simulateHarness20Turns(cfg: HarnessConfig): HarnessBudgetResult {
+  const turns = 20;
+  const sysK = 3.1;
+  const toolsK = cfg.leanTools ? 3.6 : 20.25;
+  const perTurnGrowthK = cfg.capLogs ? 1.8 : 5.4;
+
+  let prefixK = sysK + toolsK;
+  let totalCachedK = 0;
+  let totalUncachedK = 0;
+  let totalCostUsd = 0;
+  const turnCostsUsd: number[] = [];
+
+  for (let t = 1; t <= turns; t++) {
+    const newK = perTurnGrowthK;
+    let cachedK = 0;
+    let uncachedK = 0;
+
+    if (!cfg.staticSystem || t === 1) {
+      uncachedK = prefixK + newK;
+    } else {
+      cachedK = prefixK;
+      uncachedK = newK;
+    }
+
+    // cachedK and uncachedK are in thousands of tokens (1000 K = 1 M tokens)
+    const turnUsd = (cachedK * 0.3 + uncachedK * 3.0) / 1_000;
+    totalCachedK += cachedK;
+    totalUncachedK += uncachedK;
+    totalCostUsd += turnUsd;
+    turnCostsUsd.push(turnUsd);
+    prefixK += newK;
+  }
+
+  const totalInputK = totalCachedK + totalUncachedK;
+  return {
+    finalContextK: prefixK,
+    totalInputK,
+    cachedHitRate: totalInputK > 0 ? totalCachedK / totalInputK : 0,
+    totalCostUsd,
+    turnCostsUsd,
   };
 }

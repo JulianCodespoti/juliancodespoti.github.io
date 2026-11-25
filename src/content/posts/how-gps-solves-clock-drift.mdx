@@ -1,16 +1,16 @@
 ---
 title: "How GPS Finds You Using a Bad Clock"
-subtitle: "Why a one-microsecond error in your phone's clock puts you 300 meters off, and how adding one extra satellite cancels the drift out."
-description: "An interactive 2D visualization of satellite trilateration, pseudorange clock bias, and how a real Gauss-Newton solver recovers both your position and your phone's hidden clock error."
-pubDate: 2026-11-27
-readingTime: "5 min read"
+subtitle: "Why a one-microsecond error in your phone's clock puts you 300 meters off, how satellite geometry magnifies noise, and how one extra satellite cancels the drift out."
+description: "An interactive 2D visualization of satellite trilateration, GDOP geometry dilution, pseudorange clock bias, and a real Gauss-Newton solver recovering position and clock error."
+pubDate: 2026-11-25
+readingTime: "6 min read"
 simsCount: 2
 tags: ["Hardware", "Math", "Systems"]
 preview: "how-gps-solves-clock-drift"
 featured: true
 ---
 
-import { Cue } from "../../ui";
+import { Cue, TryThis } from "../../ui";
 import {
   ClockDriftSolverFigure,
   TrilaterationFigure,
@@ -18,30 +18,42 @@ import {
 
 GPS satellites don't track your phone. They just broadcast a steady radio signal that says, *"I am Satellite 14, here is my exact orbit, and the time right now is 12:00:00.000000000."*
 
-Your phone listens to that timestamp, compares it against its own clock, multiplies the travel time by the speed of light, and gets its distance from the satellite.
+Your phone reads that timestamp, compares it against its own clock, multiplies the travel time by the speed of light, and gets its distance from the satellite.
 
-That sounds straightforward until you check the numbers. Light travels roughly **300 meters in one microsecond**. Satellites carry rubidium and cesium atomic clocks accurate to a few nanoseconds, while your phone carries a cheap quartz oscillator that drifts by milliseconds. If your phone's clock is off by just one microsecond, every distance measurement is wrong by 300 meters, which is useless for turn-by-turn navigation.
+That sounds simple until you check the units. Light travels roughly **300 meters in one microsecond**. Satellites carry rubidium and cesium atomic clocks accurate to a few nanoseconds, while your phone carries a cheap quartz oscillator that drifts by milliseconds. If your phone's clock is off by a single microsecond, every distance measurement is wrong by 300 meters.
 
-The way GPS works around a terrible receiver clock is one of the cleanest math tricks in engineering.
+The way GPS turns a terrible receiver clock into meter-level accuracy is one of the cleanest geometry tricks in engineering.
 
-## First, trilateration with a perfect clock
+## Trilateration and why sky geometry matters (GDOP)
 
-Start on a flat 2D map and pretend your phone's clock is magically synced to the satellites. Knowing your distance from one satellite puts you somewhere on a circle around it. Add a second satellite and the two circles intersect at **two** spots: your real location and a <Cue tone="crimson">mirror twin</Cue>. A third satellite breaks the tie and pins down your exact `(x, y)`.
+Start on a flat 2D map and pretend your phone's clock is synced to the satellites. Knowing your distance from one satellite puts you on a circle around it. Add a second satellite and the two circles intersect at two spots: your real location and a <Cue tone="crimson">mirror twin</Cue>. A third satellite breaks the tie and pins down `(x, y)`.
 
-Drag the green dot around below to see why two circles aren't enough even with a perfect clock.
+Even with three satellites, *where* they sit in the sky matters almost as much as your timing accuracy. Real radio measurements always carry a small band of atmospheric noise (drawn as the faint thick band around each circle below). When satellites surround you evenly, those bands cross at nearly right angles, keeping your uncertainty small. When all three cluster on one side of the sky, the circles graze each other at shallow angles and the overlapping zone stretches out. Navigation engineers call this **GDOP** (Geometric Dilution of Precision).
 
 <TrilaterationFigure client:visible />
 
+<TryThis>
+Hit <code>Cluster satellites</code> (or drag all three teal dots to the top edge yourself) and watch <code>GDOP</code> jump from ~1.2 into double digits while the uncertainty halo around you explodes. That is why GPS struggles inside urban canyons between skyscrapers.
+</TryThis>
+
 ## Now break the phone's clock
 
-In reality, your phone's clock has some unknown offset `b`. Because you compare every satellite's timestamp against the **same** faulty local clock, every measured distance (called a *pseudorange*) is shifted by the exact same amount `b * c`.
+In reality, your phone's clock has some unknown offset `b`. Because your receiver compares every satellite's timestamp against the **same** faulty local clock, every measured distance (called a *pseudorange*) is shifted by the exact same radius `b * c`.
 
-If your clock is running `0.32` microseconds fast, all three circles grow by `96` meters at the same time. They no longer meet at a single point; instead, they pull apart and leave an empty <Cue tone="crimson">error zone</Cue> in the middle where no location satisfies all three circles.
+If your clock runs `0.32` microseconds fast, all three circles grow by `96` meters at once. They no longer meet at a point; they pull apart and leave an empty <Cue tone="crimson">error zone</Cue> in the middle where no location satisfies all three rings.
 
-Here is the trick. Since all three circles are wrong by the exact same unknown radius offset `b`, you don't have two unknowns (`x, y`) anymore; you have **three** (`x, y, b`). And three circles give you three equations.
+Here is the trick. Because all three circles are wrong by the exact same unknown offset `b`, you don't have two unknowns (`x, y`) anymore; you have **three** (`x, y, b`). And three circles give you three nonlinear equations.
 
-Hit **Solve clock offset** below to run a real Gauss-Newton solver in your browser. It nudges `(x, y)` and shrinks or expands all three rings together until the mismatch drops to zero, recovering both your <Cue tone="sage">exact position</Cue> and your phone's hidden clock error to the nanosecond.
+Hit **Solve clock offset** below to run a real 3x3 Gauss-Newton solver in your browser. It nudges `(x, y)` and shrinks or expands all three rings together until the mismatch drops to zero, recovering both your <Cue tone="sage">exact position</Cue> and your phone's hidden clock bias.
 
 <ClockDriftSolverFigure client:visible />
 
-Real GPS simply moves this exact geometry up one dimension. In 3D space you have four unknowns (`x`, `y`, `z`, and your phone's clock bias `b`), which is why your phone needs a lock on at least **four** satellites to get a fix. As a side effect, the moment your phone solves for your location, it also turns its cheap quartz chip into a nanosecond-accurate atomic-synced clock for free.
+<TryThis>
+Drag the clock error slider into negative territory (like <code>-0.36 us</code>, where your phone clock is running slow and the rings shrink too small to meet), then hit <code>Solve clock offset</code>. Notice the solver converges in 4 iterations in either direction.
+</TryThis>
+
+## 3D space and Einstein's +38 microseconds per day
+
+Real GPS moves this exact geometry up one dimension. In 3D space you have four unknowns (`x`, `y`, `z`, and your phone's clock bias `b`), which is why your phone needs a lock on at least **four** satellites to get a fix. As a free bonus, solving for your position turns your phone's cheap quartz chip into a nanosecond-synced clock.
+
+One last clock detail makes the whole system possible: relativity. GPS satellites orbit 20,200 km above Earth at 14,000 km/h. Special relativity slows their onboard atomic clocks by about `7` microseconds per day because of their speed, while general relativity speeds them up by about `45` microseconds per day because Earth's gravity is weaker up there. Left uncorrected, the net `+38` microseconds per day would add **11.4 kilometers of position drift every single day**. Engineers literally tune satellite atomic clocks slightly slow on the ground before launch so they tick at the right rate once they reach orbit.

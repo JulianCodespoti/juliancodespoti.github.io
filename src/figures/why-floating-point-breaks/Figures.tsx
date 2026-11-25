@@ -1,5 +1,5 @@
 import { useMemo, useRef, useState } from "react";
-import { CanvasStage, drawLabel, fillRoundRect } from "../../runtime";
+import { CanvasStage, drawLabel, fillRoundRect, stepSpring } from "../../runtime";
 import { ChipButton, Figure, Slider } from "../../ui";
 import {
   decodeFloat16,
@@ -7,6 +7,7 @@ import {
   formatFloat16Value,
   inspectOctaveGap,
   toggleFloat16Bit,
+  traceFloat16Addition,
 } from "./model";
 
 /* ==========================================================================
@@ -14,7 +15,7 @@ import {
    ========================================================================== */
 
 export function FloatBitsFigure() {
-  const [bits, setBits] = useState<number>(FLOAT16_PRESETS[0].bits); // Start on 0.1 (repeating 1001100110)
+  const [bits, setBits] = useState<number>(FLOAT16_PRESETS[0].bits);
   const bitRectsRef = useRef<{ x: number; y: number; w: number; h: number }[]>([]);
   const decoded = useMemo(() => decodeFloat16(bits), [bits]);
 
@@ -67,7 +68,6 @@ export function FloatBitsFigure() {
           const startX = Math.round((width - totalW) / 2);
           const bitY = 42;
 
-          // Group labels above the 3 fields
           const expStartX = startX + bitW + groupGap;
           const expW = bitW * 5 + bitGap * 4;
           const mantStartX = expStartX + expW + groupGap;
@@ -133,7 +133,6 @@ export function FloatBitsFigure() {
           }
           bitRectsRef.current = rects;
 
-          // Decoded formula + exact stored decimal value
           drawLabel(ctx, formula, width / 2, bitY + bitH + 26, {
             color: theme.muted,
             font: theme.fontSans,
@@ -154,12 +153,218 @@ export function FloatBitsFigure() {
 }
 
 /* ==========================================================================
-   Figure 2: The Doubling-Gap Number Line (Why 2048 + 1 === 2048)
+   Figure 2: Interactive Binary Addition (Exponent Shift + Dropped Guard Bits)
+   ========================================================================== */
+
+const ADD_PRESETS = [
+  { id: "0.1+0.2", label: "0.1 + 0.2", a: 0.1, b: 0.2 },
+  { id: "1.0+0.5", label: "1.0 + 0.5", a: 1.0, b: 0.5 },
+  { id: "2048+1", label: "2048 + 1", a: 2048, b: 1 },
+] as const;
+
+export function FloatAdderFigure() {
+  const [presetId, setPresetId] = useState<(typeof ADD_PRESETS)[number]["id"]>("0.1+0.2");
+  const preset = ADD_PRESETS.find((p) => p.id === presetId) ?? ADD_PRESETS[0];
+  const trace = useMemo(() => traceFloat16Addition(preset.a, preset.b, preset.label), [preset]);
+
+  return (
+    <Figure
+      caption={
+        presetId === "2048+1"
+          ? `Aligning 1 to 2^11 shifts its 1 bit 11 slots right, completely past the 10-bit mantissa wall, so 2048 + 1 returns 2048.`
+          : trace.lostBits
+            ? `Shifting ${preset.a} right by ${trace.shift} bit aligns exponents at 2^(${trace.alignedExp}), pushing low bits past the 10-bit wall (stored result: ${Number(trace.resultValue.toPrecision(7))}, not ${trace.exactDecimal}).`
+            : `Both operands fit cleanly inside 10 mantissa bits with zero bits dropped (exact result: ${trace.resultValue}).`
+      }
+      controls={
+        <div style={{ display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0.35rem" }}>
+          {ADD_PRESETS.map((p) => (
+            <ChipButton key={p.id} active={presetId === p.id} onClick={() => setPresetId(p.id)}>
+              {p.label}
+            </ChipButton>
+          ))}
+        </div>
+      }
+    >
+      <CanvasStage
+        height={196}
+        running={false}
+        label="Bit-level floating-point addition showing exponent alignment shifts and bits falling past the 10-bit mantissa precision wall"
+        onFrame={({ ctx, width, height, theme }) => {
+          ctx.clearRect(0, 0, width, height);
+
+          const padX = 20;
+          const labelW = 92;
+          const totalCols = 14; // 11 kept significand bits + 3 dropped-bit slots past the precision wall
+          const wallGap = 14;
+          const bitGap = 3;
+          const availW = width - padX * 2 - labelW - wallGap - bitGap * (totalCols - 2);
+          const bitW = Math.min(26, Math.max(13, Math.floor(availW / totalCols)));
+          const bitH = 26;
+          const startX = padX + labelW;
+          const wallX = startX + 11 * (bitW + bitGap) - bitGap + wallGap / 2;
+
+          drawLabel(ctx, `Aligned at 2^(${trace.alignedExp})`, padX, 18, {
+            color: theme.teal,
+            font: theme.fontSans,
+            size: 11.5,
+            weight: 600,
+          });
+          drawLabel(
+            ctx,
+            trace.lostBits
+              ? `Result: ${Number(trace.resultValue.toPrecision(7))} (exact: ${trace.exactDecimal})`
+              : `Exact result: ${trace.resultValue}`,
+            width - padX,
+            18,
+            {
+              color: trace.lostBits ? theme.crimson : theme.sage,
+              font: theme.fontMono,
+              size: 11.5,
+              weight: 600,
+              align: "right",
+            },
+          );
+
+          // Vertical precision wall separating kept 11-bit significand from dropped bits!
+          ctx.save();
+          ctx.setLineDash([4, 3]);
+          ctx.beginPath();
+          ctx.moveTo(wallX, 34);
+          ctx.lineTo(wallX, height - 18);
+          ctx.strokeStyle = theme.crimson;
+          ctx.lineWidth = 1.4;
+          ctx.stroke();
+          ctx.restore();
+
+          drawLabel(ctx, "10-bit wall", wallX, height - 9, {
+            color: theme.crimson,
+            font: theme.fontSans,
+            size: 10,
+            weight: 600,
+            align: "center",
+          });
+
+          const drawBitRow = (
+            y: number,
+            rowLabel: string,
+            kept: (number | null)[],
+            dropped: number[],
+            color: string,
+            bg: string,
+          ) => {
+            drawLabel(ctx, rowLabel, padX, y + bitH / 2, {
+              color: theme.muted,
+              font: theme.fontSans,
+              size: 11.5,
+              weight: 500,
+            });
+
+            for (let i = 0; i < 11; i++) {
+              const x = startX + i * (bitW + bitGap);
+              const val = kept[i];
+              const isImplicit = i === 0;
+              fillRoundRect(
+                ctx,
+                x,
+                y,
+                bitW,
+                bitH,
+                4,
+                val === 1 ? bg : theme.bg,
+                val === null ? theme.line : val === 1 ? color : theme.lineStrong,
+                isImplicit ? 1.5 : 1,
+              );
+              drawLabel(ctx, val === null ? "·" : `${val}`, x + bitW / 2, y + bitH / 2 + 1, {
+                color: val === 1 ? theme.ink : theme.dim,
+                font: theme.fontMono,
+                size: 12,
+                weight: 600,
+                align: "center",
+              });
+            }
+
+            // Dropped guard bits to the right of the wall
+            for (let d = 0; d < Math.min(3, dropped.length); d++) {
+              const x = wallX + wallGap / 2 + d * (bitW + bitGap);
+              const val = dropped[d];
+              fillRoundRect(
+                ctx,
+                x,
+                y,
+                bitW,
+                bitH,
+                4,
+                val === 1 ? theme.crimsonBg : theme.bg,
+                val === 1 ? theme.crimson : theme.line,
+                1.2,
+              );
+              drawLabel(ctx, `${val}`, x + bitW / 2, y + bitH / 2 + 1, {
+                color: val === 1 ? theme.crimson : theme.dim,
+                font: theme.fontMono,
+                size: 11.5,
+                weight: 600,
+                align: "center",
+              });
+            }
+          };
+
+          drawBitRow(40, `${preset.a > preset.b ? preset.a : preset.b}`, trace.bigBits11, [], theme.teal, theme.tealBg);
+          drawBitRow(
+            78,
+            `+ ${preset.a > preset.b ? preset.b : preset.a} (>>${trace.shift})`,
+            trace.smallAlignedKept,
+            trace.smallDroppedBits.length > 0 ? trace.smallDroppedBits : [],
+            theme.copper,
+            theme.copperBg,
+          );
+
+          // Sum divider line
+          ctx.beginPath();
+          ctx.moveTo(startX, 114);
+          ctx.lineTo(wallX - wallGap / 2, 114);
+          ctx.strokeStyle = theme.lineStrong;
+          ctx.lineWidth = 1.5;
+          ctx.stroke();
+
+          drawBitRow(
+            124,
+            `Sum (2^${trace.resultExp})`,
+            trace.sumBits11,
+            [],
+            trace.lostBits ? theme.crimson : theme.sage,
+            trace.lostBits ? theme.crimsonBg : theme.sageBg,
+          );
+
+          if (trace.shift >= 11) {
+            drawLabel(ctx, "shifted off!", wallX + wallGap / 2 + 2, 137, {
+              color: theme.crimson,
+              font: theme.fontSans,
+              size: 10.5,
+              weight: 600,
+            });
+          } else if (trace.smallDroppedBits.some((b) => b === 1)) {
+            drawLabel(ctx, "rounded", wallX + wallGap / 2 + 2, 137, {
+              color: theme.crimson,
+              font: theme.fontSans,
+              size: 10.5,
+              weight: 600,
+            });
+          }
+        }}
+      />
+    </Figure>
+  );
+}
+
+/* ==========================================================================
+   Figure 3: Smooth Spring-Zooming Number Line (Why 2048 + 1 === 2048)
    ========================================================================== */
 
 export function NumberLineZoomFigure() {
-  const [octave, setOctave] = useState(11); // Start right at 2048 so the stuck +1 jump is immediately visible!
+  const [octave, setOctave] = useState(11);
   const info = useMemo(() => inspectOctaveGap(octave), [octave]);
+  const octaveSpringRef = useRef({ value: 11, velocity: 0 });
 
   return (
     <Figure
@@ -181,39 +386,34 @@ export function NumberLineZoomFigure() {
       }
     >
       <CanvasStage
-        height={164}
-        running={false}
-        label="Number line showing representable float tick spacing doubling at every power of two and a +1 jump snapping back when the gap exceeds 1"
-        onFrame={({ ctx, width, height, theme }) => {
+        height={166}
+        label="Spring-animated number line showing representable float tick spacing doubling smoothly at every power of two and a +1 jump snapping back when the gap exceeds 1"
+        onFrame={({ ctx, width, height, dt, theme }) => {
+          stepSpring(octaveSpringRef.current, octave, dt, 190, 22);
+          const smoothK = octaveSpringRef.current.value;
+          const smoothRightGap = Math.pow(2, smoothK - 10);
+          const smoothLeftGap = smoothRightGap / 2;
+
           ctx.clearRect(0, 0, width, height);
 
           const padX = 28;
-          const lineY = 104;
+          const lineY = 106;
           const centerX = Math.round(width * 0.44);
-          // Visual scale: keep `1.0` unit fixed at a clean pixel width around 2^k so the doubling gaps feel physical!
           const pxPerUnit = Math.min(72, Math.max(36, (width - padX * 2) / 9.5));
 
-          // Top status
           drawLabel(ctx, `Gap below ${info.x}: ${info.leftGap}   |   Gap above ${info.x}: ${info.rightGap}`, padX, 18, {
             color: theme.muted,
             font: theme.fontSans,
             size: 11.5,
           });
-          drawLabel(
-            ctx,
-            `${info.x} + 1 = ${info.addOneResult}`,
-            width - padX,
-            18,
-            {
-              color: info.stuck ? theme.crimson : theme.sage,
-              font: theme.fontMono,
-              size: 12.5,
-              weight: 600,
-              align: "right",
-            },
-          );
+          drawLabel(ctx, `${info.x} + 1 = ${info.addOneResult}`, width - padX, 18, {
+            color: info.stuck ? theme.crimson : theme.sage,
+            font: theme.fontMono,
+            size: 12.5,
+            weight: 600,
+            align: "right",
+          });
 
-          // Main number line
           ctx.beginPath();
           ctx.moveTo(padX, lineY);
           ctx.lineTo(width - padX, lineY);
@@ -221,11 +421,12 @@ export function NumberLineZoomFigure() {
           ctx.lineWidth = 2;
           ctx.stroke();
 
-          // Draw representable ticks to the LEFT of 2^k (spacing = leftGap)
+          // Smoothly stretching left ticks
           ctx.strokeStyle = theme.teal;
           ctx.lineWidth = 1.6;
-          for (let step = 1; ; step++) {
-            const tx = centerX - step * info.leftGap * pxPerUnit;
+          const leftStepPx = Math.max(4, smoothLeftGap * pxPerUnit);
+          for (let step = 1; step < 80; step++) {
+            const tx = centerX - step * leftStepPx;
             if (tx < padX) break;
             ctx.beginPath();
             ctx.moveTo(tx, lineY - 9);
@@ -233,18 +434,19 @@ export function NumberLineZoomFigure() {
             ctx.stroke();
           }
 
-          // Draw representable ticks to the RIGHT of 2^k (spacing = rightGap = 2x leftGap!)
+          // Smoothly stretching right ticks (2x left spacing!)
           ctx.strokeStyle = info.stuck ? theme.crimson : theme.sage;
           ctx.lineWidth = 1.8;
-          for (let step = 1; ; step++) {
-            const tx = centerX + step * info.rightGap * pxPerUnit;
+          const rightStepPx = Math.max(8, smoothRightGap * pxPerUnit);
+          for (let step = 1; step < 80; step++) {
+            const tx = centerX + step * rightStepPx;
             if (tx > width - padX) break;
             ctx.beginPath();
             ctx.moveTo(tx, lineY - 12);
             ctx.lineTo(tx, lineY + 12);
             ctx.stroke();
 
-            if (step === 1) {
+            if (step === 1 && Math.abs(smoothK - octave) < 0.25) {
               drawLabel(ctx, `${info.x + info.rightGap}`, tx, lineY + 26, {
                 color: theme.muted,
                 font: theme.fontMono,
@@ -254,7 +456,6 @@ export function NumberLineZoomFigure() {
             }
           }
 
-          // Anchor tick at x = 2^k
           ctx.strokeStyle = theme.ink;
           ctx.lineWidth = 2.5;
           ctx.beginPath();
@@ -269,7 +470,6 @@ export function NumberLineZoomFigure() {
             align: "center",
           });
 
-          // Draw the exact `+ 1` jump arc!
           const targetX = centerX + 1 * pxPerUnit;
           const arcColor = info.stuck ? theme.crimson : theme.sage;
           const midX = (centerX + targetX) / 2;
@@ -282,7 +482,6 @@ export function NumberLineZoomFigure() {
           ctx.lineWidth = 2.2;
           ctx.stroke();
 
-          // Landing dot at x + 1
           ctx.fillStyle = arcColor;
           ctx.beginPath();
           ctx.arc(targetX, lineY, 4.5, 0, Math.PI * 2);
@@ -296,7 +495,6 @@ export function NumberLineZoomFigure() {
             align: "center",
           });
 
-          // If stuck, draw a dashed snap-back arrow showing rounding right back onto x!
           if (info.stuck) {
             ctx.save();
             ctx.setLineDash([3, 3]);

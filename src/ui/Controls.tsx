@@ -18,6 +18,15 @@ export function Cue({ tone, children }: { tone: InkTone; children: ReactNode }) 
   );
 }
 
+/** Quiet editorial discovery prompt encouraging the reader to poke at an edge case. */
+export function TryThis({ children }: { children: ReactNode }) {
+  return (
+    <div className="try-this">
+      <span className="try-this-tag">Try this:</span> {children}
+    </div>
+  );
+}
+
 /** Frameless editorial figure with optional quiet inline controls and caption below. */
 export function Figure({
   controls,

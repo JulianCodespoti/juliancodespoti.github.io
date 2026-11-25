@@ -2,15 +2,15 @@
 title: "Single Agent vs. Multi-Agent Swarms"
 subtitle: "Why role-based agent swarms lose to a plain loop on cache geometry, and the two places a second agent actually pays off."
 description: "Visualizing why multi-agent role swarms burn uncached prefill at every handoff, how disposable subagents prevent attention dilution, and why fresh-context verification catches writer bias."
-pubDate: 2026-11-24
-readingTime: "5 min read"
+pubDate: 2026-11-22
+readingTime: "6 min read"
 simsCount: 2
 tags: ["Agents", "Architecture", "Systems"]
 preview: "single-agent-vs-multi-agent-swarms"
 featured: true
 ---
 
-import { Cue } from "../../ui";
+import { Cue, TryThis } from "../../ui";
 import {
   CachePyramidFigure,
   NeedleGridFigure,
@@ -45,6 +45,10 @@ If the main agent runs six greps and opens twelve files itself, tens of thousand
 A short-lived, read-only subagent flips the math. You spin up a throwaway window, let it absorb all the raw grep noise, extract just the <Cue tone="teal">four relevant answers</Cue> with file paths and line numbers, hand them back to the main agent, and discard the subagent completely.
 
 <NeedleGridFigure client:visible />
+
+<TryThis>
+Switch to <code>Search inline</code> and hover over the scattered teal squares inside the orange log noise to see the actual lock call sites buried inside unrelated matches. Then flip to <code>Disposable subagent</code> and hit replay.
+</TryThis>
 
 ## The second exception: a fresh pair of eyes
 

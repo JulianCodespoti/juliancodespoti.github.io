@@ -164,25 +164,58 @@ export function CachePyramidFigure() {
    ========================================================================== */
 
 // Deterministic scattered positions where the 4 real answers land inside the 80-cell haystack
-const ANSWER_POSITIONS = new Set([19, 37, 58, 74]);
+const ANSWER_POSITIONS = new Map<number, string>([
+  [19, "src/server/ws.rs:260  self.q.lock()"],
+  [37, "src/server/ws.rs:300  push() acquires lock"],
+  [58, "src/server/http/socket.rs:88  attach()"],
+  [74, "src/sessions/watcher.rs:142  has_audience()"],
+]);
+
+const SPEC_LABELS = [
+  "System rules",
+  "Tool schemas",
+  "Task: fix lock contention",
+  "Constraint: keep API compat",
+  "Constraint: no lock across .await",
+  "Target: src/server/ws.rs",
+  "Test: cargo test ws::",
+  "Prior finding: stall latch",
+];
+
+const NOISE_SAMPLES = [
+  "target/debug/... unrelated match",
+  "tests/fixtures/large.jsonl:412",
+  "web/dist/assets/index.js:1",
+  "docs/archive/old_notes.md:88",
+  "Cargo.lock:1920 checksum line",
+  "node_modules/vitest/... PASS",
+];
 
 export function NeedleGridFigure() {
   const simRef = useRef(createNeedleSim("subagent"));
   const [mode, setMode] = useState<NeedleMode>("subagent");
+  const [hoveredInfo, setHoveredInfo] = useState<string | null>(null);
+  const cellHitsRef = useRef<{ x: number; y: number; size: number; label: string }[]>([]);
 
   const switchMode = (next: NeedleMode) => {
     setMode(next);
+    setHoveredInfo(null);
     resetNeedleSim(simRef.current, next);
   };
 
-  const replay = () => resetNeedleSim(simRef.current, mode);
+  const replay = () => {
+    setHoveredInfo(null);
+    resetNeedleSim(simRef.current, mode);
+  };
 
   return (
     <Figure
       caption={
-        mode === "inline"
-          ? "Searching inline dumps 76 noise blocks straight into working memory, burying your 12 real signal blocks at 14% density."
-          : "A disposable subagent absorbs the 76 noise blocks in a throwaway window, extracts the 4 teal answers, and disappears."
+        hoveredInfo
+          ? `Inspecting block: ${hoveredInfo}`
+          : mode === "inline"
+            ? "Searching inline dumps 76 noise blocks into working memory, burying your 12 signal blocks at 14% density. Hover any cell to inspect."
+            : "A disposable subagent absorbs 76 noise blocks in a throwaway window, hands back the 4 teal answers, and disappears. Hover any cell."
       }
       controls={
         <>
@@ -203,7 +236,15 @@ export function NeedleGridFigure() {
     >
       <CanvasStage
         height={196}
+        cursor="pointer"
         label="2D token grid showing how inline repo searches dilute signal cells under raw noise versus a disposable subagent extracting only the 4 answer cells"
+        onPointerMove={(p) => {
+          const hit = cellHitsRef.current.find(
+            (c) => p.x >= c.x && p.x <= c.x + c.size && p.y >= c.y && p.y <= c.y + c.size,
+          );
+          setHoveredInfo(hit ? hit.label : null);
+        }}
+        onPointerLeave={() => setHoveredInfo(null)}
         onFrame={({ ctx, width, height, dt, theme }) => {
           const sim = simRef.current;
           stepNeedleSim(sim, dt);
@@ -213,6 +254,7 @@ export function NeedleGridFigure() {
           const padX = 20;
           const topY = 44;
           const boxH = height - topY - 26;
+          const hits: { x: number; y: number; size: number; label: string }[] = [];
 
           drawLabel(ctx, "Main agent context window", padX, 18, {
             color: theme.ink,
@@ -247,7 +289,6 @@ export function NeedleGridFigure() {
           const innerPad = 12;
 
           if (sim.mode === "inline") {
-            // Everything floods into the Main box: 8 sage spec cells + 80 search cells (4 teal needles buried in 76 noise)
             const cols = Math.max(8, Math.floor((mainW - innerPad * 2 + gap) / pitch));
             const visibleSearch = Math.round(clamp(sim.progress / 0.78, 0, 1) * (NOISE_CELLS + ANSWER_CELLS));
             const totalToDraw = SPEC_CELLS + visibleSearch;
@@ -260,31 +301,42 @@ export function NeedleGridFigure() {
               if (y + cell > topY + boxH - 6) break;
 
               let fill = theme.lineStrong;
+              let label = "";
               if (i < SPEC_CELLS) {
                 fill = theme.sage;
+                label = SPEC_LABELS[i % SPEC_LABELS.length];
               } else {
                 const searchIdx = i - SPEC_CELLS;
-                fill = ANSWER_POSITIONS.has(searchIdx) ? theme.teal : theme.copperBg;
+                const ans = ANSWER_POSITIONS.get(searchIdx);
+                if (ans) {
+                  fill = theme.teal;
+                  label = ans;
+                } else {
+                  fill = theme.copperBg;
+                  label = NOISE_SAMPLES[searchIdx % NOISE_SAMPLES.length];
+                }
               }
               fillRoundRect(ctx, x, y, cell, cell, 2.5, fill);
+              hits.push({ x, y, size: cell, label });
             }
           } else {
-            // Left: Clean Main window holding 8 sage spec cells (+ 4 teal answer cells once extracted!)
             const mainCols = Math.max(4, Math.floor((mainW - innerPad * 2 + gap) / pitch));
             for (let i = 0; i < SPEC_CELLS; i++) {
               const c = i % mainCols;
               const r = Math.floor(i / mainCols);
-              fillRoundRect(ctx, padX + innerPad + c * pitch, topY + innerPad + r * pitch, cell, cell, 2.5, theme.sage);
+              const x = padX + innerPad + c * pitch;
+              const y = topY + innerPad + r * pitch;
+              fillRoundRect(ctx, x, y, cell, cell, 2.5, theme.sage);
+              hits.push({ x, y, size: cell, label: SPEC_LABELS[i % SPEC_LABELS.length] });
             }
 
-            // Right: Temporary Subagent sandbox absorbing all 76 noise + 4 teal answer cells
             const subX = padX + mainW + 24;
             const subW = width - padX - subX;
             const subCols = Math.max(6, Math.floor((subW - innerPad * 2 + gap) / pitch));
 
-            // Compute start & end coordinates of the 4 teal answer cells so they physically fly across!
-            const answerStarts: { x: number; y: number }[] = [];
+            const answerStarts: { x: number; y: number; label: string }[] = [];
             const answerTargets: { x: number; y: number }[] = [];
+            const answerLabels = Array.from(ANSWER_POSITIONS.values());
             for (let a = 0; a < ANSWER_CELLS; a++) {
               const idx = SPEC_CELLS + a;
               answerTargets.push({
@@ -314,13 +366,16 @@ export function NeedleGridFigure() {
                 const y = topY + innerPad + r * pitch;
                 if (y + cell > topY + boxH - 6) break;
 
-                if (ANSWER_POSITIONS.has(s)) {
-                  answerStarts.push({ x, y });
+                const ans = ANSWER_POSITIONS.get(s);
+                if (ans) {
+                  answerStarts.push({ x, y, label: ans });
                   if (sim.progress < 0.52) {
                     fillRoundRect(ctx, x, y, cell, cell, 2.5, theme.teal);
+                    hits.push({ x, y, size: cell, label: ans });
                   }
                 } else {
                   fillRoundRect(ctx, x, y, cell, cell, 2.5, theme.copperBg);
+                  hits.push({ x, y, size: cell, label: NOISE_SAMPLES[s % NOISE_SAMPLES.length] });
                 }
               }
               ctx.restore();
@@ -333,20 +388,21 @@ export function NeedleGridFigure() {
               });
             }
 
-            // Smoothly fly the 4 extracted teal answer cells from the noisy subagent into the clean main box!
             if (sim.progress >= 0.52) {
               const flyT = easeOutCubic(clamp((sim.progress - 0.52) / 0.24, 0, 1));
               for (let a = 0; a < ANSWER_CELLS; a++) {
-                const from = answerStarts[a] ?? { x: subX + 20, y: topY + 30 + a * 16 };
+                const from = answerStarts[a] ?? { x: subX + 20, y: topY + 30 + a * 16, label: answerLabels[a] };
                 const to = answerTargets[a];
                 const x = from.x + (to.x - from.x) * flyT;
                 const y = from.y + (to.y - from.y) * flyT;
                 fillRoundRect(ctx, x, y, cell, cell, 2.5, theme.teal);
+                hits.push({ x, y, size: cell, label: answerLabels[a] });
               }
             }
           }
 
-          // Quiet bottom legend
+          cellHitsRef.current = hits;
+
           const ly = height - 11;
           let lx = padX;
           for (const [label, col] of [

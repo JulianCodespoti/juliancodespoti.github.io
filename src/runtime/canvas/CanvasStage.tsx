@@ -24,6 +24,7 @@ export function CanvasStage({
   label,
   running = true,
   cursor,
+  touchAction = "manipulation",
   framed = true,
   onFrame,
   onPointerDown,
@@ -35,6 +36,7 @@ export function CanvasStage({
   label: string;
   running?: boolean;
   cursor?: string;
+  touchAction?: "manipulation" | "none";
   framed?: boolean;
   onFrame: (frame: CanvasFrame) => void;
   onPointerDown?: (p: CanvasPointer) => void;
@@ -168,7 +170,7 @@ export function CanvasStage({
         ref={canvasRef}
         role="img"
         aria-label={label}
-        style={{ display: "block", cursor: cursor ?? "default", touchAction: "manipulation" }}
+        style={{ display: "block", cursor: cursor ?? "default", touchAction }}
         onPointerDown={onPointerDown ? (e) => onPointerDown(toPointer(e)) : undefined}
         onPointerMove={onPointerMove ? (e) => onPointerMove(toPointer(e)) : undefined}
         onPointerUp={onPointerUp ? (e) => onPointerUp(toPointer(e)) : undefined}

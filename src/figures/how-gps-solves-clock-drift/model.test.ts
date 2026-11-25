@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   circleIntersections,
+  computeHdop2D,
   dist2D,
   measurePseudoranges,
   SATELLITES,
@@ -39,5 +40,23 @@ describe("2D GPS Trilateration & Clock-Drift Solver", () => {
     const solved = solveGps2D(pseudoranges);
     expect(dist2D(solved.pos, trueReceiver)).toBeLessThan(0.01);
     expect(solved.clockBiasUs).toBeCloseTo(trueBiasUs, 4);
+  });
+
+  it("reports low HDOP for spread satellites and high HDOP when clustered on one side", () => {
+    const receiver = { x: 500, y: 280 };
+    const spreadHdop = computeHdop2D(
+      SATELLITES.map((s) => s.pos),
+      receiver,
+    );
+    const clusteredHdop = computeHdop2D(
+      [
+        { x: 220, y: 90 },
+        { x: 310, y: 85 },
+        { x: 400, y: 95 },
+      ],
+      receiver,
+    );
+    expect(spreadHdop).toBeLessThan(2.0);
+    expect(clusteredHdop).toBeGreaterThan(8.0);
   });
 });

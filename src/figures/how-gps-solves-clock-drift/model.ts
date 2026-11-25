@@ -138,3 +138,35 @@ export function solveGps2D(
     residualMeters: Math.sqrt(residualSq / 3),
   };
 }
+
+/**
+ * Exact 2D Horizontal Dilution of Precision (HDOP) from satellite geometry:
+ * Q = (H^T H)^-1 where H_i = [dx_i/d_i, dy_i/d_i, 1]; HDOP = sqrt(Q_00 + Q_11).
+ * Low (~1.2) when satellites surround you; spikes (>8) when clustered on one side of the sky!
+ */
+export function computeHdop2D(satPositions: readonly Vec2[], receiver: Vec2): number {
+  if (satPositions.length < 3) return Infinity;
+  // Build 3x3 normal matrix G = H^T * H
+  const G: number[][] = [
+    [0, 0, 0],
+    [0, 0, 0],
+    [0, 0, 0],
+  ];
+  for (const sat of satPositions) {
+    const dx = receiver.x - sat.x;
+    const dy = receiver.y - sat.y;
+    const d = Math.max(1e-4, Math.hypot(dx, dy));
+    const row = [dx / d, dy / d, 1];
+    for (let r = 0; r < 3; r++) {
+      for (let c = 0; c < 3; c++) {
+        G[r][c] += row[r] * row[c];
+      }
+    }
+  }
+  const col0 = solve3x3(G, [1, 0, 0]);
+  const col1 = solve3x3(G, [0, 1, 0]);
+  if (!col0 || !col1) return 99.9;
+  const variance = Math.max(0, col0[0] + col1[1]);
+  return Math.min(99.9, Math.sqrt(variance));
+}
+

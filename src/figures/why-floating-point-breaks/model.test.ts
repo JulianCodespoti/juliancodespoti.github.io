@@ -4,6 +4,7 @@ import {
   encodeFloat16,
   inspectOctaveGap,
   toggleFloat16Bit,
+  traceFloat16Addition,
 } from "./model";
 
 describe("IEEE 754 binary16 model", () => {
@@ -44,5 +45,21 @@ describe("IEEE 754 binary16 model", () => {
     const at4096 = inspectOctaveGap(12);
     expect(at4096.rightGap).toBe(4);
     expect(at4096.stuck).toBe(true);
+  });
+
+  it("traces exponent alignment and dropped bits for 0.1 + 0.2, 1.0 + 0.5, and 2048 + 1", () => {
+    const tenthPlusFifth = traceFloat16Addition(0.1, 0.2, "0.1 + 0.2");
+    expect(tenthPlusFifth.shift).toBe(1);
+    expect(tenthPlusFifth.lostBits).toBe(true);
+    expect(tenthPlusFifth.resultValue).not.toBe(0.3);
+
+    const exact = traceFloat16Addition(1.0, 0.5, "1.0 + 0.5");
+    expect(exact.resultValue).toBe(1.5);
+    expect(exact.lostBits).toBe(false);
+
+    const stuck = traceFloat16Addition(2048, 1, "2048 + 1");
+    expect(stuck.shift).toBe(11);
+    expect(stuck.smallAlignedKept.every((b) => b === null)).toBe(true);
+    expect(stuck.resultValue).toBe(2048);
   });
 });

@@ -1,1 +1,1 @@
-export { ChipButton, Cue, Figure, HoldButton, IconButton, Slider, Toggle, type InkTone } from "./Controls";
+export { ChipButton, Cue, Figure, HoldButton, IconButton, Slider, Toggle, TryThis, type InkTone } from "./Controls";

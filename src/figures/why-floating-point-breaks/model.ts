@@ -194,3 +194,81 @@ export function inspectOctaveGap(octave: number): OctaveGapInfo {
     stuck: addOneResult === x,
   };
 }
+
+/* ==========================================================================
+   3. Exact Binary16 Addition Trace (Exponent Alignment + Dropped Guard Bits)
+   ========================================================================== */
+
+export interface FloatAddTrace {
+  label: string;
+  aVal: number;
+  bVal: number;
+  bigVal: number;
+  smallVal: number;
+  alignedExp: number;
+  shift: number;
+  bigBits11: number[]; // 11 bits: [implicit 1, m9..m0]
+  smallAlignedKept: (number | null)[]; // 11 slots (leading nulls when shifted right)
+  smallDroppedBits: number[]; // bits pushed past the 10-bit mantissa wall!
+  sumBits11: number[]; // resulting rounded 11-bit significand
+  resultExp: number;
+  resultValue: number;
+  exactDecimal: number;
+  lostBits: boolean;
+}
+
+export function traceFloat16Addition(aInput: number, bInput: number, label: string): FloatAddTrace {
+  const aDec = decodeFloat16(encodeFloat16(aInput));
+  const bDec = decodeFloat16(encodeFloat16(bInput));
+
+  const big = aDec.value >= bDec.value ? aDec : bDec;
+  const small = aDec.value >= bDec.value ? bDec : aDec;
+
+  const bigSig = 1024 + big.mantissaRaw; // 11-bit integer (bit 10 is implicit 1)
+  const smallSig = 1024 + small.mantissaRaw;
+  const shift = Math.max(0, big.exponent - small.exponent);
+
+  const to11 = (n: number) => Array.from({ length: 11 }, (_, i) => (n >>> (10 - i)) & 1);
+  const bigBits11 = to11(bigSig);
+  const smallOrig11 = to11(smallSig);
+
+  const smallAlignedKept: (number | null)[] = Array.from({ length: 11 }, (_, i) => {
+    const src = i - shift;
+    return src >= 0 && src < 11 ? smallOrig11[src] : null;
+  });
+
+  // Bits shifted past bit 0 of the 11-bit significand (up to 4 shown cleanly in the dropped tray)
+  const smallDroppedBits: number[] = [];
+  if (shift > 0) {
+    for (let k = 0; k < Math.min(shift, 5); k++) {
+      const src = 11 - shift + k;
+      smallDroppedBits.push(src >= 0 && src < 11 ? smallOrig11[src] : 0);
+    }
+  }
+
+  const sumBitsRaw = encodeFloat16(big.value + small.value);
+  const sumDec = decodeFloat16(sumBitsRaw);
+  const sumBits11 = to11(1024 + sumDec.mantissaRaw);
+
+  const exactDecimal = aInput + bInput;
+  const lostBits = Math.abs(sumDec.value - exactDecimal) > 1e-12;
+
+  return {
+    label,
+    aVal: aDec.value,
+    bVal: bDec.value,
+    bigVal: big.value,
+    smallVal: small.value,
+    alignedExp: big.exponent,
+    shift,
+    bigBits11,
+    smallAlignedKept,
+    smallDroppedBits,
+    sumBits11,
+    resultExp: sumDec.exponent,
+    resultValue: sumDec.value,
+    exactDecimal,
+    lostBits,
+  };
+}
+
