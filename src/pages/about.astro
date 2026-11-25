@@ -8,7 +8,7 @@ import { SITE } from "../site.config";
   description={`About ${SITE.author} and ${SITE.brand}.`}
   activeNav="about"
 >
-  <main class="col-page">
+  <main class="col-page" id="main-content">
     <h1 class="page-title">About</h1>
     <div class="post-prose">
       <p>
@@ -26,6 +26,11 @@ import { SITE } from "../site.config";
           </li>
         ))}
       </ul>
+
+      <h2>How this site is built</h2>
+      <p>
+        Static Astro and MDX, zero analytics trackers, zero third-party embeds, and small hand-drawn HTML5 canvas simulations backed by unit-tested TypeScript models. Every figure responds live to both dark and light paper themes (press <code>T</code> anywhere to switch) and pauses automatically when off-screen.
+      </p>
 
       <h2>Links</h2>
       <ul>

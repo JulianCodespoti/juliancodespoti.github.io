@@ -49,20 +49,27 @@ export function SessionAnatomyFigure() {
         }}
         onFrame={({ ctx, width, height, theme }) => {
           ctx.clearRect(0, 0, width, height);
-          const padX = 20;
+          const compact = width < 480;
+          const padX = compact ? 12 : 20;
           const barW = width - padX * 2;
           const barY = 44;
           const barH = 40;
 
-          drawLabel(ctx, `Hover or tap any slice (${(SESSION_TOTAL_TOKENS / 1000).toFixed(1)}K tokens total)`, padX, 20, {
+          const leftHeader = compact
+            ? `${(SESSION_TOTAL_TOKENS / 1000).toFixed(1)}K tokens`
+            : `Hover or tap any slice (${(SESSION_TOTAL_TOKENS / 1000).toFixed(1)}K tokens total)`;
+          const shortActive =
+            compact && active.label.length > 20 ? `${active.label.slice(0, 18)}...` : active.label;
+
+          drawLabel(ctx, leftHeader, padX, 20, {
             color: theme.muted,
             font: theme.fontSans,
-            size: 11.5,
+            size: compact ? 10.5 : 11.5,
           });
-          drawLabel(ctx, `${active.label} (${pct}%)`, width - padX, 20, {
+          drawLabel(ctx, `${shortActive} (${pct}%)`, width - padX, 20, {
             color: active.category === "logs" ? theme.copper : active.category === "code" ? theme.sage : theme.teal,
             font: theme.fontSans,
-            size: 12,
+            size: compact ? 10.5 : 12,
             weight: 600,
             align: "right",
           });
@@ -119,16 +126,18 @@ export function SessionAnatomyFigure() {
           // Quiet bottom legend
           const ly = height - 15;
           let lx = padX;
+          const legendFontSize = compact ? 9.5 : 10.5;
+          const legendGap = compact ? 14 : 24;
           for (const [label, col] of [
             ["System", theme.muted],
             ["Tools", theme.teal],
             ["User", theme.ink],
             ["Code", theme.sage],
-            ["Logs & grep", theme.copper],
+            [compact ? "Logs" : "Logs & grep", theme.copper],
           ] as const) {
-            fillRoundRect(ctx, lx, ly - 4, 8, 8, 2, col);
-            drawLabel(ctx, label, lx + 12, ly, { color: theme.dim, font: theme.fontSans, size: 10.5 });
-            lx += ctx.measureText(label).width + 24;
+            fillRoundRect(ctx, lx, ly - 4, 7, 7, 2, col);
+            drawLabel(ctx, label, lx + 10, ly, { color: theme.dim, font: theme.fontSans, size: legendFontSize });
+            lx += ctx.measureText(label).width + legendGap;
           }
         }}
       />
@@ -186,9 +195,10 @@ export function CausalCacheFigure() {
           const s = getCausalCacheStats(sim);
           ctx.clearRect(0, 0, width, height);
 
-          const padX = 20;
+          const compact = width < 480;
+          const padX = compact ? 12 : 20;
           const n = CAUSAL_BLOCKS.length;
-          const gap = 8;
+          const gap = compact ? 4 : 8;
           const blockW = (width - padX * 2 - gap * (n - 1)) / n;
           const blockH = 48;
           const blockY = height - blockH - 22;
@@ -203,20 +213,22 @@ export function CausalCacheFigure() {
           }
           rectsRef.current = rects;
 
-          drawLabel(ctx, "Causal attention flows left -> right", padX, 18, {
+          drawLabel(ctx, compact ? "Causal: left -> right" : "Causal attention flows left -> right", padX, 18, {
             color: theme.dim,
             font: theme.fontSans,
-            size: 11.5,
+            size: compact ? 10.5 : 11.5,
           });
           drawLabel(
             ctx,
-            `Turn input cost: ${s.costCents.toFixed(2)}c  (${Math.round(s.hitRate * 100)}% cached)`,
+            compact
+              ? `${s.costCents.toFixed(2)}c (${Math.round(s.hitRate * 100)}% hit)`
+              : `Turn input cost: ${s.costCents.toFixed(2)}c  (${Math.round(s.hitRate * 100)}% cached)`,
             width - padX,
             18,
             {
               color: s.hitRate > 0.7 ? theme.sage : theme.crimson,
               font: theme.fontSans,
-              size: 12,
+              size: compact ? 10.5 : 12,
               weight: 600,
               align: "right",
             },
@@ -298,14 +310,14 @@ export function CausalCacheFigure() {
             drawLabel(ctx, b.label, r.x + r.w / 2, r.y + 17, {
               color: theme.ink,
               font: theme.fontSans,
-              size: 11.5,
+              size: compact ? 9.5 : 11.5,
               weight: 600,
               align: "center",
             });
             drawLabel(ctx, isEdited ? "edited" : cached ? "cached" : "invalid", r.x + r.w / 2, r.y + 34, {
               color: cached ? theme.sage : theme.crimson,
               font: theme.fontSans,
-              size: 10.5,
+              size: compact ? 8.5 : 10.5,
               weight: 500,
               align: "center",
             });
@@ -371,11 +383,12 @@ export function TurnTriangleFigure() {
           const visibleRows = Math.ceil(revealRef.current);
           ctx.clearRect(0, 0, width, height);
 
-          const padX = 24;
-          const labelW = 48;
+          const compact = width < 480;
+          const padX = compact ? 12 : 24;
+          const labelW = compact ? 28 : 48;
           const maxCols = 16;
           const availW = width - padX * 2 - labelW;
-          const gap = 4;
+          const gap = compact ? 3 : 4;
           const cellSize = Math.min(13, Math.max(8, Math.floor((availW - gap * (maxCols - 1)) / maxCols)));
           const pitch = cellSize + gap;
           const startX = padX + labelW;
@@ -386,15 +399,15 @@ export function TurnTriangleFigure() {
             runningCost += data.rows[r].turnCostCents;
           }
 
-          drawLabel(ctx, "1 square = 2K input tokens", padX, 18, {
+          drawLabel(ctx, compact ? "1 sq = 2K tokens" : "1 square = 2K input tokens", padX, 18, {
             color: theme.dim,
             font: theme.fontSans,
-            size: 11.5,
+            size: compact ? 10.5 : 11.5,
           });
           drawLabel(ctx, `12-turn total: ${runningCost.toFixed(1)}c`, width - padX, 18, {
             color: mode === "cached" ? theme.sage : mode === "summarize" ? theme.crimson : theme.copper,
             font: theme.fontSans,
-            size: 12.5,
+            size: compact ? 11 : 12.5,
             weight: 600,
             align: "right",
           });
@@ -407,7 +420,7 @@ export function TurnTriangleFigure() {
             drawLabel(ctx, `T${row.turn}`, padX, y + cellSize / 2, {
               color: hasMiss ? theme.crimson : theme.dim,
               font: theme.fontSans,
-              size: 10.5,
+              size: compact ? 9.5 : 10.5,
               weight: hasMiss ? 600 : 500,
             });
 
@@ -420,10 +433,10 @@ export function TurnTriangleFigure() {
 
             if (hasMiss) {
               const endX = startX + row.cells.length * pitch + 6;
-              drawLabel(ctx, "summarized (cache miss)", endX, y + cellSize / 2, {
+              drawLabel(ctx, compact ? "cache miss" : "summarized (cache miss)", endX, y + cellSize / 2, {
                 color: theme.crimson,
                 font: theme.fontSans,
-                size: 10.5,
+                size: compact ? 9.5 : 10.5,
                 weight: 600,
               });
             }
@@ -431,14 +444,19 @@ export function TurnTriangleFigure() {
 
           const ly = height - 13;
           let lx = padX;
+          const legendGap = compact ? 16 : 28;
           for (const [label, col] of [
-            ["Cached (0.1x)", theme.sage],
-            ["New tokens (1.0x)", theme.copper],
-            ["Recomputed prefix (1.0x)", theme.crimson],
+            [compact ? "Cached (0.1x)" : "Cached (0.1x)", theme.sage],
+            [compact ? "New (1.0x)" : "New tokens (1.0x)", theme.copper],
+            [compact ? "Cache miss (1.0x)" : "Recomputed prefix (1.0x)", theme.crimson],
           ] as const) {
             fillRoundRect(ctx, lx, ly - 4, 8, 8, 2, col);
-            drawLabel(ctx, label, lx + 12, ly, { color: theme.dim, font: theme.fontSans, size: 10.5 });
-            lx += ctx.measureText(label).width + 28;
+            drawLabel(ctx, label, lx + 11, ly, {
+              color: theme.dim,
+              font: theme.fontSans,
+              size: compact ? 9.5 : 10.5,
+            });
+            lx += ctx.measureText(label).width + legendGap;
           }
         }}
       />
@@ -489,32 +507,39 @@ export function HarnessBudgetSandbox() {
         onFrame={({ ctx, width, height, theme }) => {
           ctx.clearRect(0, 0, width, height);
 
-          const padX = 24;
+          const compact = width < 480;
+          const padX = compact ? 14 : 24;
           const topY = 42;
           const bottomY = height - 24;
           const chartH = bottomY - topY;
           const chartW = width - padX * 2;
           const maxTurn = Math.max(...worst.turnCostsUsd);
-          const gap = 4;
+          const gap = compact ? 3 : 4;
           const barW = (chartW - gap * (res.turnCostsUsd.length - 1)) / res.turnCostsUsd.length;
 
           const allGood = cfg.staticSystem && cfg.leanTools && cfg.capLogs;
           const savingsX = worst.totalCostUsd / Math.max(0.01, res.totalCostUsd);
 
-          drawLabel(ctx, `Per-turn input cost (20 turns, same model)`, padX, 18, {
-            color: theme.muted,
-            font: theme.fontSans,
-            size: 11.5,
-          });
           drawLabel(
             ctx,
-            `$${res.totalCostUsd.toFixed(2)} total${savingsX > 1.2 ? ` (${savingsX.toFixed(1)}x cheaper)` : ""}`,
+            compact ? "20-turn input cost" : "Per-turn input cost (20 turns, same model)",
+            padX,
+            18,
+            {
+              color: theme.muted,
+              font: theme.fontSans,
+              size: compact ? 10.5 : 11.5,
+            },
+          );
+          drawLabel(
+            ctx,
+            `$${res.totalCostUsd.toFixed(2)} total${savingsX > 1.2 ? ` (${savingsX.toFixed(1)}x)` : ""}`,
             width - padX,
             18,
             {
               color: allGood ? theme.sage : res.cachedHitRate === 0 ? theme.crimson : theme.copper,
               font: theme.fontSans,
-              size: 12.5,
+              size: compact ? 11 : 12.5,
               weight: 600,
               align: "right",
             },

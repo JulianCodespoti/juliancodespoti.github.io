@@ -31,7 +31,7 @@ Take a concrete 12-step bugfix on a Rust server. The user writes two short promp
 <SessionAnatomyFigure client:visible />
 
 <TryThis>
-Hover across the strip and compare the two tiny white user slices against the single orange test failure right in the middle.
+Hover across the strip and compare the two tiny user slices against the single orange test failure right in the middle.
 </TryThis>
 
 Before turn 1 even starts, there is also a fixed prefix tax from tool definitions. Every tool your harness exposes has to be described as JSON (parameters, types, enums, descriptions), usually costing around 400 to 500 tokens per tool. Six or eight crisp primitives (`read`, `edit`, `write`, `grep`, `find`, `bash`) take roughly 3.6K tokens. Attaching 45 MCP tools "just in case" locks up 20K+ tokens before the model has read a single line of your repo.

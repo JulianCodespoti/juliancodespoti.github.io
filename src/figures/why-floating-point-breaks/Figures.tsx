@@ -58,12 +58,13 @@ export function FloatBitsFigure() {
         onFrame={({ ctx, width, height, theme }) => {
           ctx.clearRect(0, 0, width, height);
 
-          const padX = 18;
-          const groupGap = 12;
-          const bitGap = 4;
+          const compact = width < 480;
+          const padX = compact ? 10 : 18;
+          const groupGap = compact ? 7 : 12;
+          const bitGap = compact ? 2 : 4;
           const availW = width - padX * 2 - groupGap * 2 - bitGap * 13;
-          const bitW = Math.min(34, Math.max(16, Math.floor(availW / 16)));
-          const bitH = 38;
+          const bitW = Math.min(34, Math.max(14, Math.floor(availW / 16)));
+          const bitH = compact ? 34 : 38;
           const totalW = bitW * 16 + bitGap * 13 + groupGap * 2;
           const startX = Math.round((width - totalW) / 2);
           const bitY = 42;
@@ -73,24 +74,24 @@ export function FloatBitsFigure() {
           const mantStartX = expStartX + expW + groupGap;
           const mantW = bitW * 10 + bitGap * 9;
 
-          drawLabel(ctx, "Sign", startX + bitW / 2, 22, {
+          drawLabel(ctx, compact ? "S" : "Sign", compact ? startX + bitW / 2 : startX + bitW / 2, 22, {
             color: theme.copper,
             font: theme.fontSans,
-            size: 11,
+            size: compact ? 10 : 11,
             weight: 600,
             align: "center",
           });
-          drawLabel(ctx, "Exponent (5 bits)", expStartX + expW / 2, 22, {
+          drawLabel(ctx, compact ? "Exp (5)" : "Exponent (5 bits)", expStartX + expW / 2, 22, {
             color: theme.teal,
             font: theme.fontSans,
-            size: 11,
+            size: compact ? 10 : 11,
             weight: 600,
             align: "center",
           });
-          drawLabel(ctx, "Mantissa (10 bits)", mantStartX + mantW / 2, 22, {
+          drawLabel(ctx, compact ? "Mantissa (10)" : "Mantissa (10 bits)", mantStartX + mantW / 2, 22, {
             color: theme.sage,
             font: theme.fontSans,
-            size: 11,
+            size: compact ? 10 : 11,
             weight: 600,
             align: "center",
           });
@@ -193,34 +194,37 @@ export function FloatAdderFigure() {
         onFrame={({ ctx, width, height, theme }) => {
           ctx.clearRect(0, 0, width, height);
 
-          const padX = 20;
-          const labelW = 92;
+          const compact = width < 480;
+          const padX = compact ? 10 : 20;
+          const labelW = compact ? 62 : 92;
           const totalCols = 14; // 11 kept significand bits + 3 dropped-bit slots past the precision wall
-          const wallGap = 14;
-          const bitGap = 3;
+          const wallGap = compact ? 9 : 14;
+          const bitGap = compact ? 2 : 3;
           const availW = width - padX * 2 - labelW - wallGap - bitGap * (totalCols - 2);
-          const bitW = Math.min(26, Math.max(13, Math.floor(availW / totalCols)));
-          const bitH = 26;
+          const bitW = Math.min(26, Math.max(12, Math.floor(availW / totalCols)));
+          const bitH = compact ? 24 : 26;
           const startX = padX + labelW;
           const wallX = startX + 11 * (bitW + bitGap) - bitGap + wallGap / 2;
 
-          drawLabel(ctx, `Aligned at 2^(${trace.alignedExp})`, padX, 18, {
+          drawLabel(ctx, compact ? `2^(${trace.alignedExp})` : `Aligned at 2^(${trace.alignedExp})`, padX, 18, {
             color: theme.teal,
             font: theme.fontSans,
-            size: 11.5,
+            size: compact ? 10.5 : 11.5,
             weight: 600,
           });
           drawLabel(
             ctx,
             trace.lostBits
-              ? `Result: ${Number(trace.resultValue.toPrecision(7))} (exact: ${trace.exactDecimal})`
+              ? compact
+                ? `Result: ${Number(trace.resultValue.toPrecision(5))}`
+                : `Result: ${Number(trace.resultValue.toPrecision(7))} (exact: ${trace.exactDecimal})`
               : `Exact result: ${trace.resultValue}`,
             width - padX,
             18,
             {
               color: trace.lostBits ? theme.crimson : theme.sage,
               font: theme.fontMono,
-              size: 11.5,
+              size: compact ? 10.5 : 11.5,
               weight: 600,
               align: "right",
             },
@@ -312,7 +316,9 @@ export function FloatAdderFigure() {
           drawBitRow(40, `${preset.a > preset.b ? preset.a : preset.b}`, trace.bigBits11, [], theme.teal, theme.tealBg);
           drawBitRow(
             78,
-            `+ ${preset.a > preset.b ? preset.b : preset.a} (>>${trace.shift})`,
+            compact
+              ? `+${preset.a > preset.b ? preset.b : preset.a} >>${trace.shift}`
+              : `+ ${preset.a > preset.b ? preset.b : preset.a} (>>${trace.shift})`,
             trace.smallAlignedKept,
             trace.smallDroppedBits.length > 0 ? trace.smallDroppedBits : [],
             theme.copper,
@@ -329,7 +335,7 @@ export function FloatAdderFigure() {
 
           drawBitRow(
             124,
-            `Sum (2^${trace.resultExp})`,
+            compact ? `Sum` : `Sum (2^${trace.resultExp})`,
             trace.sumBits11,
             [],
             trace.lostBits ? theme.crimson : theme.sage,
@@ -337,17 +343,17 @@ export function FloatAdderFigure() {
           );
 
           if (trace.shift >= 11) {
-            drawLabel(ctx, "shifted off!", wallX + wallGap / 2 + 2, 137, {
+            drawLabel(ctx, compact ? "lost!" : "shifted off!", wallX + wallGap / 2 + 2, 137, {
               color: theme.crimson,
               font: theme.fontSans,
-              size: 10.5,
+              size: compact ? 9.5 : 10.5,
               weight: 600,
             });
           } else if (trace.smallDroppedBits.some((b) => b === 1)) {
-            drawLabel(ctx, "rounded", wallX + wallGap / 2 + 2, 137, {
+            drawLabel(ctx, compact ? "rnd" : "rounded", wallX + wallGap / 2 + 2, 137, {
               color: theme.crimson,
               font: theme.fontSans,
-              size: 10.5,
+              size: compact ? 9.5 : 10.5,
               weight: 600,
             });
           }
@@ -396,20 +402,29 @@ export function NumberLineZoomFigure() {
 
           ctx.clearRect(0, 0, width, height);
 
-          const padX = 28;
+          const compact = width < 480;
+          const padX = compact ? 14 : 28;
           const lineY = 106;
           const centerX = Math.round(width * 0.44);
           const pxPerUnit = Math.min(72, Math.max(36, (width - padX * 2) / 9.5));
 
-          drawLabel(ctx, `Gap below ${info.x}: ${info.leftGap}   |   Gap above ${info.x}: ${info.rightGap}`, padX, 18, {
-            color: theme.muted,
-            font: theme.fontSans,
-            size: 11.5,
-          });
+          drawLabel(
+            ctx,
+            compact
+              ? `Gaps: ${info.leftGap} | ${info.rightGap}`
+              : `Gap below ${info.x}: ${info.leftGap}   |   Gap above ${info.x}: ${info.rightGap}`,
+            padX,
+            18,
+            {
+              color: theme.muted,
+              font: theme.fontSans,
+              size: compact ? 10.5 : 11.5,
+            },
+          );
           drawLabel(ctx, `${info.x} + 1 = ${info.addOneResult}`, width - padX, 18, {
             color: info.stuck ? theme.crimson : theme.sage,
             font: theme.fontMono,
-            size: 12.5,
+            size: compact ? 11 : 12.5,
             weight: 600,
             align: "right",
           });

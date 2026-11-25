@@ -70,12 +70,13 @@ export function CachePyramidFigure() {
 
           ctx.clearRect(0, 0, width, height);
 
-          const padX = 24;
-          const labelW = 84;
+          const compact = width < 480;
+          const padX = compact ? 14 : 24;
+          const labelW = compact ? 66 : 84;
           const maxCols = 14;
           const availW = width - padX * 2 - labelW;
-          const gap = 4;
-          const cellSize = Math.min(15, Math.max(9, Math.floor((availW - gap * (maxCols - 1)) / maxCols)));
+          const gap = compact ? 3 : 4;
+          const cellSize = Math.min(15, Math.max(8, Math.floor((availW - gap * (maxCols - 1)) / maxCols)));
           const pitch = cellSize + gap;
           const startX = padX + labelW;
           const startY = 40;
@@ -85,15 +86,15 @@ export function CachePyramidFigure() {
             runningCost += data.rows[r].turnCostCents;
           }
 
-          drawLabel(ctx, "1 square = 2K input tokens", padX, 18, {
+          drawLabel(ctx, compact ? "1 sq = 2K tokens" : "1 square = 2K input tokens", padX, 18, {
             color: theme.dim,
             font: theme.fontSans,
-            size: 11.5,
+            size: compact ? 10.5 : 11.5,
           });
           drawLabel(ctx, `8-turn cost: ${runningCost.toFixed(1)}c`, width - padX, 18, {
             color: mode === "single" ? theme.sage : theme.crimson,
             font: theme.fontSans,
-            size: 12.5,
+            size: compact ? 11 : 12.5,
             weight: 600,
             align: "right",
           });
@@ -119,7 +120,7 @@ export function CachePyramidFigure() {
             drawLabel(ctx, row.owner, padX, y + cellSize / 2, {
               color: row.isHandoff ? theme.crimson : theme.muted,
               font: theme.fontSans,
-              size: 11,
+              size: compact ? 10 : 11,
               weight: row.isHandoff ? 600 : 500,
             });
 
@@ -131,11 +132,11 @@ export function CachePyramidFigure() {
             });
 
             if (row.isHandoff) {
-              const endX = startX + row.cells.length * pitch + 8;
-              drawLabel(ctx, "cold start", endX, y + cellSize / 2, {
+              const endX = startX + row.cells.length * pitch + 6;
+              drawLabel(ctx, compact ? "cold" : "cold start", endX, y + cellSize / 2, {
                 color: theme.crimson,
                 font: theme.fontSans,
-                size: 10.5,
+                size: compact ? 9.5 : 10.5,
                 weight: 600,
               });
             }
@@ -144,14 +145,19 @@ export function CachePyramidFigure() {
           // Bottom legend
           const ly = height - 13;
           let lx = padX;
+          const legendGap = compact ? 16 : 26;
           for (const [label, col] of [
-            ["Cached prefix (0.1x)", theme.sage],
-            ["New tokens (1.0x)", theme.copper],
-            ["Cold prefill (1.0x)", theme.crimson],
+            [compact ? "Cached (0.1x)" : "Cached prefix (0.1x)", theme.sage],
+            [compact ? "New (1.0x)" : "New tokens (1.0x)", theme.copper],
+            [compact ? "Cold (1.0x)" : "Cold prefill (1.0x)", theme.crimson],
           ] as const) {
             fillRoundRect(ctx, lx, ly - 4, 8, 8, 2, col);
-            drawLabel(ctx, label, lx + 12, ly, { color: theme.dim, font: theme.fontSans, size: 10.5 });
-            lx += ctx.measureText(label).width + 26;
+            drawLabel(ctx, label, lx + 11, ly, {
+              color: theme.dim,
+              font: theme.fontSans,
+              size: compact ? 9.5 : 10.5,
+            });
+            lx += ctx.measureText(label).width + legendGap;
           }
         }}
       />

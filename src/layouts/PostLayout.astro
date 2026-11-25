@@ -86,7 +86,7 @@ const jsonLd = {
 >
   <div class="reading-progress" id="reading-progress" aria-hidden="true"></div>
 
-  <main class="post-shell">
+  <main class="post-shell" id="main-content">
     {tocItems.length >= 2 && (
       <aside class="post-toc" aria-label="On this page">
         <div class="post-toc-title">On this page</div>
@@ -127,16 +127,39 @@ const jsonLd = {
         <slot />
       </div>
 
+      <aside class="post-rss-box" aria-label="Follow new essays">
+        <div>
+          <div class="post-rss-title">More interactive essays like this</div>
+          <p class="post-rss-copy">Published occasionally on systems, AI mechanics, and visual math. Follow via RSS or GitHub.</p>
+        </div>
+        <div class="post-rss-actions">
+          <a class="ui-btn ui-btn--accent" href="/rss.xml">RSS Feed</a>
+          <button type="button" class="ui-btn" id="copy-rss-btn">Copy RSS URL</button>
+        </div>
+      </aside>
+
       <nav class="post-end" aria-label="Post navigation">
         {prevPost ? (
-          <a href={`/posts/${prevPost.slug}/`}>Prev: {prevPost.title}</a>
+          <a class="post-nav-card" href={`/posts/${prevPost.slug}/`}>
+            <span class="post-nav-kicker">Previous essay</span>
+            <span class="post-nav-title">{prevPost.title}</span>
+          </a>
         ) : (
-          <a href="/">All posts</a>
+          <a class="post-nav-card" href="/">
+            <span class="post-nav-kicker">Archive</span>
+            <span class="post-nav-title">All essays</span>
+          </a>
         )}
         {nextPost ? (
-          <a href={`/posts/${nextPost.slug}/`}>Next: {nextPost.title}</a>
+          <a class="post-nav-card post-nav-card--next" href={`/posts/${nextPost.slug}/`}>
+            <span class="post-nav-kicker">Next essay</span>
+            <span class="post-nav-title">{nextPost.title}</span>
+          </a>
         ) : (
-          <a href="/rss.xml">Subscribe via RSS</a>
+          <a class="post-nav-card post-nav-card--next" href="/about/">
+            <span class="post-nav-kicker">About</span>
+            <span class="post-nav-title">About {SITE.brand}</span>
+          </a>
         )}
       </nav>
     </article>
@@ -144,39 +167,96 @@ const jsonLd = {
 
   <script is:inline>
     (() => {
-      // 1. Reading progress hairline
+      // 1. Reading progress hairline + deterministic TOC scrollspy
       const bar = document.getElementById("reading-progress");
-      const updateProgress = () => {
-        if (!bar) return;
-        const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
-        const pct = Math.min(100, Math.max(0, (window.scrollY / max) * 100));
-        bar.style.width = pct.toFixed(2) + "%";
-      };
-      window.addEventListener("scroll", updateProgress, { passive: true });
-      window.addEventListener("resize", updateProgress, { passive: true });
-      updateProgress();
-
-      // 2. Clickable heading anchors + active TOC highlighting
       const prose = document.getElementById("post-prose");
+      const tocLinks = Array.from(document.querySelectorAll("[data-toc-link]"));
+      const h2s = prose ? Array.from(prose.querySelectorAll("h2[id]")) : [];
+
+      const setActiveToc = (slug) => {
+        tocLinks.forEach((el) => {
+          const active = el.getAttribute("data-toc-link") === slug;
+          el.setAttribute("data-active", active ? "true" : "false");
+          if (active) el.setAttribute("aria-current", "location");
+          else el.removeAttribute("aria-current");
+        });
+      };
+
+      let scrollTicking = false;
+      const syncOnScroll = () => {
+        scrollTicking = false;
+        if (bar) {
+          const max = Math.max(1, document.documentElement.scrollHeight - window.innerHeight);
+          const pct = Math.min(100, Math.max(0, (window.scrollY / max) * 100));
+          bar.style.width = pct.toFixed(2) + "%";
+        }
+        if (tocLinks.length > 0 && h2s.length > 0) {
+          const atBottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 24;
+          if (atBottom) {
+            setActiveToc(h2s[h2s.length - 1].id);
+          } else {
+            let current = h2s[0].id;
+            for (const h of h2s) {
+              if (h.getBoundingClientRect().top <= 140) {
+                current = h.id;
+              } else {
+                break;
+              }
+            }
+            setActiveToc(current);
+          }
+        }
+      };
+
+      const scheduleScrollSync = () => {
+        if (scrollTicking) return;
+        scrollTicking = true;
+        window.requestAnimationFrame(syncOnScroll);
+      };
+
+      window.addEventListener("scroll", scheduleScrollSync, { passive: true });
+      window.addEventListener("resize", scheduleScrollSync, { passive: true });
+      syncOnScroll();
+
       if (prose) {
+        // 2. Clickable heading anchors with permalink copy
         const headings = Array.from(prose.querySelectorAll("h2[id], h3[id]"));
         headings.forEach((h) => {
           if (h.querySelector(".heading-anchor")) return;
           const a = document.createElement("a");
           a.className = "heading-anchor";
           a.href = "#" + h.id;
-          a.setAttribute("aria-label", "Link to section " + (h.textContent || ""));
+          a.setAttribute("aria-label", "Copy link to section " + (h.textContent || ""));
           a.textContent = "#";
+          a.addEventListener("click", async () => {
+            const url = new URL("#" + h.id, window.location.href).toString();
+            try {
+              await navigator.clipboard.writeText(url);
+              a.textContent = "copied";
+              a.dataset.copied = "true";
+              window.setTimeout(() => {
+                a.textContent = "#";
+                delete a.dataset.copied;
+              }, 1400);
+            } catch {}
+          });
           h.appendChild(a);
         });
 
-        // 3. Copy button on fenced code blocks
+        // 3. Framed header bar + Copy button on fenced code blocks (zero line-1 overlap)
         prose.querySelectorAll("pre").forEach((pre) => {
           if (pre.parentElement?.classList.contains("code-block-wrap")) return;
           const wrap = document.createElement("div");
           wrap.className = "code-block-wrap";
           pre.parentNode?.insertBefore(wrap, pre);
-          wrap.appendChild(pre);
+
+          const header = document.createElement("div");
+          header.className = "code-block-bar";
+
+          const lang = document.createElement("span");
+          lang.className = "code-block-lang";
+          const rawLang = (pre.getAttribute("data-language") || "").trim();
+          lang.textContent = rawLang && rawLang !== "plaintext" ? rawLang : "code";
 
           const btn = document.createElement("button");
           btn.type = "button";
@@ -189,31 +269,33 @@ const jsonLd = {
               window.setTimeout(() => { btn.textContent = "Copy"; }, 1400);
             } catch {}
           });
-          wrap.appendChild(btn);
+
+          header.appendChild(lang);
+          header.appendChild(btn);
+          wrap.appendChild(header);
+          wrap.appendChild(pre);
         });
 
-        // 4. Desktop margin TOC scrollspy
-        const tocLinks = Array.from(document.querySelectorAll("[data-toc-link]"));
-        if (tocLinks.length > 0 && typeof IntersectionObserver !== "undefined") {
-          const setActive = (slug) => {
-            tocLinks.forEach((el) => {
-              el.setAttribute("data-active", el.getAttribute("data-toc-link") === slug ? "true" : "false");
-            });
-          };
-          setActive(tocLinks[0].getAttribute("data-toc-link"));
-          const h2s = Array.from(prose.querySelectorAll("h2[id]"));
-          const io = new IntersectionObserver(
-            (entries) => {
-              const visible = entries.filter((e) => e.isIntersecting);
-              if (visible.length > 0) {
-                setActive(visible[0].target.id);
-              }
-            },
-            { rootMargin: "-10% 0px -70% 0px", threshold: 0 },
-          );
-          h2s.forEach((h) => io.observe(h));
-        }
+        // 4. Responsive horizontal scroll wrapper for Markdown tables
+        prose.querySelectorAll("table").forEach((table) => {
+          if (table.parentElement?.classList.contains("table-wrap")) return;
+          const wrap = document.createElement("div");
+          wrap.className = "table-wrap";
+          table.parentNode?.insertBefore(wrap, table);
+          wrap.appendChild(table);
+        });
       }
+
+      // 5. Copy RSS URL button in post footer
+      const copyRssBtn = document.getElementById("copy-rss-btn");
+      copyRssBtn?.addEventListener("click", async () => {
+        try {
+          const rssUrl = new URL("/rss.xml", window.location.origin).toString();
+          await navigator.clipboard.writeText(rssUrl);
+          copyRssBtn.textContent = "Copied";
+          window.setTimeout(() => { copyRssBtn.textContent = "Copy RSS URL"; }, 1500);
+        } catch {}
+      });
     })();
   </script>
 </BaseLayout>

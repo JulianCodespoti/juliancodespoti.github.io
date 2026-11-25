@@ -9,7 +9,13 @@ const posts = (await getCollection("posts", ({ data }) => !data.draft)).sort(
   (a, b) => b.data.pubDate.valueOf() - a.data.pubDate.valueOf(),
 );
 
-const allTags = Array.from(new Set(posts.flatMap((p) => p.data.tags))).sort();
+const tagCounts = new Map<string, number>();
+for (const p of posts) {
+  for (const t of p.data.tags) {
+    tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
+  }
+}
+const allTags = Array.from(tagCounts.keys()).sort();
 const showTagFilter = posts.length >= 2 && allTags.length >= 2;
 ---
 
@@ -18,7 +24,7 @@ const showTagFilter = posts.length >= 2 && allTags.length >= 2;
   description={SITE.tagline}
   activeNav="posts"
 >
-  <main class="col-page">
+  <main class="col-page" id="main-content">
     <section class="home-hero">
       <h1 class="home-greeting">Hey, I'm {SITE.shortName}.</h1>
       <p class="home-bio">
@@ -32,9 +38,13 @@ const showTagFilter = posts.length >= 2 && allTags.length >= 2;
 
       {showTagFilter && (
         <div class="tag-bar" role="group" aria-label="Filter posts by topic">
-          <button type="button" class="ui-btn ui-btn--active" data-tag-filter="all">All</button>
+          <button type="button" class="ui-btn ui-btn--active" data-tag-filter="all" aria-pressed="true">
+            All <span class="tag-count">{posts.length}</span>
+          </button>
           {allTags.map((tag) => (
-            <button type="button" class="ui-btn" data-tag-filter={tag}>{tag}</button>
+            <button type="button" class="ui-btn" data-tag-filter={tag} aria-pressed="false">
+              {tag} <span class="tag-count">{tagCounts.get(tag)}</span>
+            </button>
           ))}
         </div>
       )}
@@ -96,18 +106,37 @@ const showTagFilter = posts.length >= 2 && allTags.length >= 2;
   {showTagFilter && (
     <script is:inline>
       (() => {
-        const buttons = document.querySelectorAll("[data-tag-filter]");
-        const items = document.querySelectorAll(".post-feed-item");
+        const buttons = Array.from(document.querySelectorAll("[data-tag-filter]"));
+        const items = Array.from(document.querySelectorAll(".post-feed-item"));
+        const validTags = new Set(buttons.map((b) => b.getAttribute("data-tag-filter") || "all"));
+
+        const applyTag = (tag, updateUrl) => {
+          const activeTag = validTags.has(tag) ? tag : "all";
+          buttons.forEach((b) => {
+            const match = (b.getAttribute("data-tag-filter") || "all") === activeTag;
+            b.classList.toggle("ui-btn--active", match);
+            b.setAttribute("aria-pressed", String(match));
+          });
+          items.forEach((el) => {
+            const tags = (el.getAttribute("data-tags") || "").split(",");
+            el.style.display = activeTag === "all" || tags.includes(activeTag) ? "" : "none";
+          });
+          if (updateUrl && window.history && window.history.replaceState) {
+            const url = new URL(window.location.href);
+            if (activeTag === "all") url.searchParams.delete("tag");
+            else url.searchParams.set("tag", activeTag);
+            window.history.replaceState(null, "", url.pathname + url.search + url.hash);
+          }
+        };
+
         buttons.forEach((btn) => {
           btn.addEventListener("click", () => {
-            const tag = btn.getAttribute("data-tag-filter") || "all";
-            buttons.forEach((b) => b.classList.toggle("ui-btn--active", b === btn));
-            items.forEach((el) => {
-              const tags = (el.getAttribute("data-tags") || "").split(",");
-              el.style.display = tag === "all" || tags.includes(tag) ? "" : "none";
-            });
+            applyTag(btn.getAttribute("data-tag-filter") || "all", true);
           });
         });
+
+        const initial = new URLSearchParams(window.location.search).get("tag");
+        if (initial) applyTag(initial, false);
       })();
     </script>
   )}

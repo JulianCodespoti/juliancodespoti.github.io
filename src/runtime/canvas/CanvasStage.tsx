@@ -171,9 +171,32 @@ export function CanvasStage({
         role="img"
         aria-label={label}
         style={{ display: "block", cursor: cursor ?? "default", touchAction }}
-        onPointerDown={onPointerDown ? (e) => onPointerDown(toPointer(e)) : undefined}
+        onPointerDown={
+          onPointerDown
+            ? (e) => {
+                if (touchAction === "none" || onPointerUp) {
+                  try {
+                    e.currentTarget.setPointerCapture(e.pointerId);
+                  } catch {}
+                }
+                onPointerDown(toPointer(e));
+              }
+            : undefined
+        }
         onPointerMove={onPointerMove ? (e) => onPointerMove(toPointer(e)) : undefined}
-        onPointerUp={onPointerUp ? (e) => onPointerUp(toPointer(e)) : undefined}
+        onPointerUp={
+          onPointerUp
+            ? (e) => {
+                try {
+                  if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+                    e.currentTarget.releasePointerCapture(e.pointerId);
+                  }
+                } catch {}
+                onPointerUp(toPointer(e));
+              }
+            : undefined
+        }
+        onPointerCancel={onPointerUp ? (e) => onPointerUp(toPointer(e)) : undefined}
         onPointerLeave={onPointerLeave}
       />
     </div>
