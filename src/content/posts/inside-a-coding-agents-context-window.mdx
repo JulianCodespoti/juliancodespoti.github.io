@@ -1,10 +1,10 @@
 ---
 title: "Inside a Coding Agent's Context Window"
-subtitle: "What is actually inside the prompt on turn 18, how one small edit breaks your prefix cache, and why compacting too early backfires."
-description: "How a coding agent's 200K context window fills up, how tool schemas tax every turn, why prefix caching is fragile, and why capping tool output beats frequent summarization."
+subtitle: "Why causal attention makes prefix caches fragile, and the geometry that explains why compacting too early raises your bill."
+description: "Visualizing causal KV prefix caching and the quadratic turn-by-turn cost triangle inside a coding agent's context window."
 pubDate: 2026-11-25
-readingTime: "6 min read"
-simsCount: 4
+readingTime: "5 min read"
+simsCount: 2
 tags: ["Agents", "LLMs", "Performance"]
 preview: "inside-a-coding-agents-context-window"
 featured: true
@@ -12,54 +12,40 @@ featured: true
 
 import { Cue } from "../../ui";
 import {
-  CompactionRaceFigure,
-  ContextTapeFigure,
-  PrefixCacheFigure,
-  ToolSchemaTaxFigure,
+  CausalCacheFigure,
+  TurnTriangleFigure,
 } from "../../figures/inside-a-coding-agents-context-window/Figures";
 
-When you send a one-line reply to a coding agent on turn 18, it feels like sending a short message. It isn't. LLM APIs are stateless, so your harness re-sends the whole conversation from byte zero on every turn: system instructions, every tool definition, every file the agent opened, every stack trace, and every reply so far.
+When you send a one-line follow-up to a coding agent on turn 18, it feels like sending a short message. It isn't. LLM APIs are stateless, so your harness sends the entire conversation from byte zero on every turn: system instructions, every tool schema, every file the agent read, every test log, and every reply so far.
 
-Once you see what actually sits inside that 200,000-token buffer, a lot of strange agent behavior suddenly makes sense. You see why a single verbose test failure makes the rest of your session sluggish, why plugging in 40 MCP servers quietly wrecks quality, and why summarizing old turns too often can make your API bill go up.
+That detail alone explains most of the weird economics of coding agents. In a real session, your own messages are usually less than 5% of the prompt; the rest is file reads, tool schemas (50 MCP tools at ~450 tokens each burns 22.5K tokens before turn 1 even starts), and raw test output that lingers in history for the rest of the chat.
 
-## Where the tokens actually go
+Two non-obvious mechanics sit underneath all of this: how causal attention makes prefix caching strictly one-directional, and why cumulative input tokens form a 2D triangle across turns.
 
-In a real coding session, the words you type are usually less than 5% of the prompt. Almost the entire window is <Cue tone="sage">file reads</Cue> and raw <Cue tone="copper">tool output</Cue>.
+## Why one changed byte breaks the rest of the prompt
 
-Run a noisy `npm test` or a verbose Rust compile error without truncating it, and you can dump 20,000+ tokens of stack traces straight into history in one shot. Because every turn after that replays the same message array, that one ugly log hangs around for the rest of the chat.
+If inference servers had to recompute attention over 60,000 tokens from scratch on every turn, coding agents would be too slow and too expensive to use. Instead, providers cache the KV state of your prompt's leading prefix and let you reuse it at roughly a tenth of normal input price.
 
-Compare that to sending a disposable subagent to search a dozen files in its own throwaway window and return a 450-token summary. Same answer, two orders of magnitude less junk stuck in your main prompt.
+What catches people off guard is how fragile that cache is. In a decoder-only transformer, attention is strictly **causal**: every token's key and value vectors mathematically depend on every token to its left, and on nothing to its right.
 
-<ContextTapeFigure client:visible />
+That means changing a single byte near the front of the prompt (a ticking `Current time: 14:03:22` in the system prompt, or dynamically adding a tool schema mid-session) alters the KV state of that block and cascades through every single block after it, even though the later conversation text didn't change at all. Blocks to the left stay <Cue tone="sage">cached</Cue>; everything from the edited block rightward turns <Cue tone="crimson">invalid</Cue>.
 
-## The tax you pay before turn 1
+Hover or click any block below to follow the causal arcs.
 
-Before the model reads a single line of your code, the harness has to explain every tool it can call as JSON inside the prompt prefix. A normal tool schema with descriptions, parameter types, and enums runs roughly 400 to 500 tokens.
+<CausalCacheFigure client:visible />
 
-Give the agent six clean primitives (`read`, `edit`, `write`, `grep`, `find`, `bash`) and your tool block sits around 2.7K tokens. Wire up 50 MCP tools "just in case" and you're shipping 22.5K tokens of schema on every single turn before anyone says hello.
+Three practical harness habits fall straight out of that geometry. Keep the system prompt completely static (put live timestamps or git status in the latest user turn instead). Freeze the tool list for the life of a session. And treat the message array as append-only while you're working.
 
-<ToolSchemaTaxFigure client:visible />
+## The quadratic triangle (and why early compaction backfires)
 
-## Prefix caching (and how one byte breaks it)
+Because every turn re-sends everything before it, cumulative input tokens across an N-turn session don't grow linearly. They fill a **2D triangle**: turn 1 sends 1 slice, turn 2 sends 2, turn 3 sends 3, and so on. Without caching, you pay full price for the entire area of that triangle.
 
-If providers had to recompute attention over 60,000 tokens from scratch on every turn, coding agents would be too slow and too expensive to use. Instead, inference servers cache the KV state of the leading prefix of your prompt.
+Prefix caching changes the shape of your bill completely. Only the first turn and the thin <Cue tone="copper">diagonal edge</Cue> of brand-new tokens pay full price; the entire <Cue tone="sage">interior of the triangle</Cue> drops to 0.1x.
 
-As long as you only append new messages to the end, the server reuses that cached prefix at roughly a tenth of the normal input price and skips almost all prefill work.
+Now look at what happens when a harness tries to be clever and summarizes older turns every 4 steps to shrink the context window. Rewriting the middle of the conversation edits the front of the prompt, which turns that entire turn into a <Cue tone="crimson">cache miss</Cue>. Even though the rows after compaction are slightly shorter, paying full prefill on those reset rows costs **more** than just leaving the warm green triangle alone.
 
-The catch is that KV states depend on every token before them, so matching is strictly prefix-based. Change one byte near the front, like putting a ticking `Current time: 14:03:22` in the system prompt or dynamically registering an MCP tool halfway through a chat, and every token after that point turns into a <Cue tone="crimson">cache miss</Cue>. Try clicking any block below to see what gets thrown away.
+Switch between the three modes below to see the area change across 12 turns (modeled at $3 / $0.30 per million input tokens, 2K tokens per square).
 
-<PrefixCacheFigure client:visible />
+<TurnTriangleFigure client:visible />
 
-A few simple harness habits save a surprising amount of money here. Keep the system prompt completely static (if the model needs the current time or git status, drop it into the latest user turn instead). Freeze the tool list for the life of a session. And treat the message array as append-only while you're working.
-
-## Why compacting too early raises your bill
-
-When a thread gets long, the obvious fix is to summarize older turns every few steps so the prompt stays small.
-
-The problem is what that does to your prefix cache. Rewriting turns 1 through 6 into a fresh summary edits the front of the conversation, which invalidates everything after it. If you do that every few turns, you end up paying full uncached prefill over and over again.
-
-Keeping the prefix untouched and capping noisy tool outputs before they ever hit history works much better in practice. Truncate giant logs to the head and tail, offload broad searches to subagents, and save full compaction for when you're genuinely running out of room. The simulation below models both approaches over 14 turns at standard $3 / $0.30 per-million input rates.
-
-<CompactionRaceFigure client:visible />
-
-Most of the gap between a sluggish, expensive agent and a snappy one comes down to this. Keep the tool list lean and fixed, don't touch the front of the prompt, bound tool outputs before they land in history, and let disposable subagents take the hit for noisy searches.
+That is why good coding harnesses rarely summarize aggressively in the middle of a session. Capping noisy tool outputs *before* they ever enter history (truncating huge test logs to the head and tail, or offloading broad searches to a disposable subagent) keeps the triangle skinny without ever breaking the prefix cache, saving full compaction for when you're genuinely near the window limit.

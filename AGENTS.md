@@ -44,6 +44,7 @@ src/
 ## Design & Craft Rules
 
 - **Editorial Precision typography:** `Newsreader` serif for display titles and `h2` headings; `IBM Plex Sans` for body prose, UI controls, and canvas labels; `IBM Plex Mono` strictly for code snippets and literal bytes/hex.
+- **The Non-Obvious Test (mandatory before building any figure):** Never animate something that is obvious from one sentence of prose (no progress bars, no static hardcoded bar charts, no `N * 450` linear sliders, no generic dots moving from Box A to Box B). Only build a figure when motion or geometry reveals a causal, quadratic, counterintuitive, or scale-driven insight you cannot feel from text alone. Prefer 2 deeply illuminating figures over 4 padded ones.
 - **Frameless visuals:** Never wrap figures in SaaS card header bars or telemetry footers. Place quiet controls (`<Figure controls={...}>`) centered underneath.
 - **Progressive disclosure & direct manipulation:** Build one coherent visual world per post. Draw sizes to true proportion and use shared scaled clocks when comparing latencies. Prefer direct clicking, dragging, live typing, or press-and-hold (`<HoldButton>`) over form buttons.
 - **Zero AI slop:** No decorative gradients, glows, dot grids, glassmorphism, em dashes, curly quotes, or hidden Unicode characters.

@@ -1,305 +1,158 @@
 import { RotateCcw } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
-import { CanvasStage, drawLabel, fillRoundRect } from "../../runtime";
-import { Figure, IconButton, Slider, Toggle } from "../../ui";
+import { CanvasStage, clamp, drawLabel, easeOutCubic, fillRoundRect } from "../../runtime";
+import { Figure, IconButton, Toggle } from "../../ui";
 import {
-  computeChainReliability,
-  createContextHygiene,
-  createHandoffRace,
-  getHandoffRaceSnapshot,
-  resetContextHygiene,
-  restartHandoffRace,
-  SINGLE_SEGMENTS,
-  SINGLE_TOTAL_SEC,
-  stepContextHygiene,
-  stepHandoffRace,
-  SWARM_SEGMENTS,
-  SWARM_TOTAL_SEC,
-  TOPOLOGIES,
-  type HygieneMode,
-  type TopologyKind,
+  ANSWER_CELLS,
+  buildHandoffStaircase,
+  createNeedleSim,
+  getNeedleSignalRatio,
+  NOISE_CELLS,
+  resetNeedleSim,
+  SPEC_CELLS,
+  stepNeedleSim,
+  TASK_TURNS,
+  type HandoffMode,
+  type NeedleMode,
 } from "./model";
 
 /* ==========================================================================
-   Figure 1: Scaled-Time Handoff Race (4-Agent Swarm vs. Single Warm Loop)
+   Figure 1: Warm Staircase vs. Cold Mountains (Exact Geometry of Handoff Tax)
    ========================================================================== */
 
-export function HandoffRaceFigure() {
-  const raceRef = useRef(createHandoffRace());
+export function CachePyramidFigure() {
+  const [mode, setMode] = useState<HandoffMode>("swarm");
+  const revealRef = useRef(TASK_TURNS);
 
-  const replay = () => restartHandoffRace(raceRef.current);
+  const data = useMemo(() => buildHandoffStaircase(mode), [mode]);
 
-  return (
-    <Figure
-      caption="Same 4-step coding task on a shared 5x clock. Notice the crimson cold-handoff stalls between separate agents. Click to replay."
-      controls={
-        <IconButton accent label="Replay handoff race" onClick={replay}>
-          <RotateCcw size={14} />
-        </IconButton>
-      }
-    >
-      <CanvasStage
-        height={162}
-        cursor="pointer"
-        label="Real-time scaled race showing a 4-agent role swarm stalling at cold handoffs versus a single warm agent loop finishing over twice as fast"
-        onPointerDown={replay}
-        onFrame={({ ctx, width, height, dt, theme }) => {
-          stepHandoffRace(raceRef.current, dt);
-          const snap = getHandoffRaceSnapshot(raceRef.current);
-          ctx.clearRect(0, 0, width, height);
-
-          const padX = 20;
-          const fullW = width - padX * 2;
-          const barH = 28;
-
-          // Top lane: 4-agent role swarm (full width = 21.8s)
-          const y1 = 36;
-          drawLabel(ctx, "4-agent role swarm", padX, y1 - 13, {
-            color: theme.copper,
-            font: theme.fontSans,
-            size: 12,
-            weight: 600,
-          });
-          drawLabel(ctx, `${snap.swarmTokensK}K tokens  |  ${snap.swarmTime.toFixed(1)} s`, width - padX, y1 - 13, {
-            color: snap.swarmDone ? theme.copper : theme.muted,
-            font: theme.fontSans,
-            size: 12,
-            weight: snap.swarmDone ? 600 : 500,
-            align: "right",
-          });
-
-          fillRoundRect(ctx, padX, y1, fullW, barH, 6, theme.bg, theme.line, 1);
-
-          let elapsedCursor = 0;
-          for (const seg of SWARM_SEGMENTS) {
-            const x = padX + (elapsedCursor / SWARM_TOTAL_SEC) * fullW;
-            const segW = (seg.durationSec / SWARM_TOTAL_SEC) * fullW;
-            const activeFrac = Math.max(0, Math.min(1, (snap.swarmTime - elapsedCursor) / seg.durationSec));
-            if (activeFrac > 0) {
-              const fill = seg.kind === "handoff" ? theme.crimson : theme.copper;
-              fillRoundRect(ctx, x + 2, y1 + 3, Math.max(2, segW * activeFrac - 3), barH - 6, 4, fill);
-            }
-            if (segW > 42) {
-              drawLabel(ctx, seg.kind === "handoff" ? "cold" : seg.label, x + segW / 2, y1 + barH / 2, {
-                color: activeFrac > 0.5 ? theme.bg : theme.dim,
-                font: theme.fontSans,
-                size: 10,
-                weight: 600,
-                align: "center",
-              });
-            }
-            elapsedCursor += seg.durationSec;
-          }
-
-          // Bottom lane: Single warm loop (proportional width = 10.2 / 21.8 of full width!)
-          const y2 = 106;
-          const singleTotalW = (SINGLE_TOTAL_SEC / SWARM_TOTAL_SEC) * fullW;
-
-          drawLabel(ctx, "Single warm loop", padX, y2 - 13, {
-            color: theme.sage,
-            font: theme.fontSans,
-            size: 12,
-            weight: 600,
-          });
-          drawLabel(ctx, `${snap.singleTokensK}K tokens  |  ${snap.singleTime.toFixed(1)} s`, width - padX, y2 - 13, {
-            color: snap.singleDone ? theme.sage : theme.muted,
-            font: theme.fontSans,
-            size: 12,
-            weight: snap.singleDone ? 600 : 500,
-            align: "right",
-          });
-
-          fillRoundRect(ctx, padX, y2, fullW, barH, 6, theme.bg, theme.line, 1);
-
-          let singleCursor = 0;
-          for (const seg of SINGLE_SEGMENTS) {
-            const x = padX + (singleCursor / SWARM_TOTAL_SEC) * fullW;
-            const segW = (seg.durationSec / SWARM_TOTAL_SEC) * fullW;
-            const activeFrac = Math.max(0, Math.min(1, (snap.singleTime - singleCursor) / seg.durationSec));
-            if (activeFrac > 0) {
-              fillRoundRect(ctx, x + 2, y2 + 3, Math.max(2, segW * activeFrac - 3), barH - 6, 4, theme.sage);
-            }
-            if (segW > 34) {
-              drawLabel(ctx, seg.label, x + segW / 2, y2 + barH / 2, {
-                color: activeFrac > 0.5 ? theme.bg : theme.dim,
-                font: theme.fontSans,
-                size: 10,
-                weight: 600,
-                align: "center",
-              });
-            }
-            singleCursor += seg.durationSec;
-          }
-
-          if (snap.singleDone) {
-            drawLabel(ctx, "Done (2.1x faster)", padX + singleTotalW + 12, y2 + barH / 2, {
-              color: theme.sage,
-              font: theme.fontSans,
-              size: 11.5,
-              weight: 600,
-            });
-          }
-
-          drawLabel(ctx, "0 s", padX, height - 10, { color: theme.dim, font: theme.fontSans, size: 10 });
-          drawLabel(ctx, `${SWARM_TOTAL_SEC.toFixed(1)} s`, width - padX, height - 10, {
-            color: theme.dim,
-            font: theme.fontSans,
-            size: 10,
-            align: "right",
-          });
-        }}
-      />
-    </Figure>
-  );
-}
-
-/* ==========================================================================
-   Figure 2: Disposable Subagent Context Hygiene (60fps particle flow)
-   ========================================================================== */
-
-export function ContextHygieneFigure() {
-  const simRef = useRef(createContextHygiene("subagent"));
-  const [mode, setMode] = useState<HygieneMode>("subagent");
-
-  const handleMode = (next: HygieneMode) => {
+  const switchMode = (next: HandoffMode) => {
     setMode(next);
-    resetContextHygiene(simRef.current, next);
+    revealRef.current = 0.5;
   };
 
-  const replay = () => resetContextHygiene(simRef.current, mode);
+  const replay = () => {
+    revealRef.current = 0.5;
+  };
 
   return (
     <Figure
       caption={
-        mode === "subagent"
-          ? "Disposable subagent absorbs 40K tokens of raw grep noise, hands back a 0.4K summary, and vanishes."
-          : "Searching directly in the main loop dumps 40K tokens of raw file noise straight into working memory."
+        mode === "single"
+          ? `One warm agent builds a single green staircase (${data.coldPrefillK}K uncached tokens, ${data.totalCostCents.toFixed(1)}c total).`
+          : `Every role handoff starts cold with a new system prompt and re-reads shared files (${data.coldPrefillK}K uncached tokens, ${data.totalCostCents.toFixed(1)}c total).`
       }
       controls={
         <>
           <Toggle
-            label="Search isolation"
+            label="Agent topology"
             value={mode}
-            onChange={handleMode}
+            onChange={switchMode}
             options={[
-              { value: "inline", label: "All in main loop" },
-              { value: "subagent", label: "Isolated subagent" },
+              { value: "single", label: "Single agent" },
+              { value: "swarm", label: "4-agent swarm" },
             ]}
           />
-          <IconButton accent label="Replay search delegation" onClick={replay}>
+          <IconButton accent label="Replay 8-turn task" onClick={replay}>
             <RotateCcw size={14} />
           </IconButton>
         </>
       }
     >
       <CanvasStage
-        height={176}
-        label="Particle flow comparing noisy repo searches flooding the main agent versus an isolated subagent absorbing noise and returning a tiny summary"
+        height={228}
+        label="Turn-by-turn token grid comparing one warm single-agent cache staircase against four cold-start rows in a multi-agent role swarm"
         onFrame={({ ctx, width, height, dt, theme }) => {
-          const sim = simRef.current;
-          stepContextHygiene(sim, dt);
+          if (revealRef.current < TASK_TURNS) {
+            revealRef.current = Math.min(TASK_TURNS, revealRef.current + dt * 5.2);
+          }
+          const visibleRows = Math.ceil(revealRef.current);
+
           ctx.clearRect(0, 0, width, height);
 
           const padX = 24;
-          const repoX = padX + 44;
-          const repoY = height * 0.5;
-          const subX = width * 0.5;
-          const subY = height * 0.34;
-          const mainX = width - padX - 72;
-          const mainY = height * 0.56;
+          const labelW = 84;
+          const maxCols = 14;
+          const availW = width - padX * 2 - labelW;
+          const gap = 4;
+          const cellSize = Math.min(15, Math.max(9, Math.floor((availW - gap * (maxCols - 1)) / maxCols)));
+          const pitch = cellSize + gap;
+          const startX = padX + labelW;
+          const startY = 40;
 
-          // Pipes
-          ctx.strokeStyle = theme.line;
-          ctx.lineWidth = 2;
-          if (sim.mode === "inline") {
-            ctx.beginPath();
-            ctx.moveTo(repoX + 36, repoY);
-            ctx.lineTo(mainX - 52, mainY);
-            ctx.stroke();
-          } else {
-            ctx.beginPath();
-            ctx.moveTo(repoX + 36, repoY);
-            ctx.lineTo(subX - 46, subY);
-            ctx.moveTo(subX + 46, subY);
-            ctx.lineTo(mainX - 52, mainY);
-            ctx.stroke();
+          let runningCost = 0;
+          for (let r = 0; r < visibleRows; r++) {
+            runningCost += data.rows[r].turnCostCents;
           }
 
-          // Animated token chunks
-          for (const p of sim.particles) {
-            let x = 0;
-            let y = 0;
-            let color = theme.copper;
-            if (p.route === "to_main") {
-              x = repoX + 36 + p.x * (mainX - 52 - (repoX + 36));
-              y = repoY + p.x * (mainY - repoY);
-            } else if (p.route === "to_sub") {
-              x = repoX + 36 + p.x * (subX - 46 - (repoX + 36));
-              y = repoY + p.x * (subY - repoY);
-            } else {
-              x = subX + 46 + p.x * (mainX - 52 - (subX + 46));
-              y = subY + p.x * (mainY - subY);
-              color = theme.sage;
-            }
-            ctx.fillStyle = color;
-            ctx.beginPath();
-            ctx.arc(x, y, p.size, 0, Math.PI * 2);
-            ctx.fill();
-          }
-
-          // Repo node (left)
-          fillRoundRect(ctx, repoX - 38, repoY - 26, 76, 52, 9, theme.surfaceSub, theme.lineStrong, 1.25);
-          drawLabel(ctx, "Repo", repoX, repoY - 6, { color: theme.ink, font: theme.fontSans, size: 12, weight: 600, align: "center" });
-          drawLabel(ctx, "40K logs", repoX, repoY + 11, { color: theme.copper, font: theme.fontSans, size: 10.5, align: "center" });
-
-          // Disposable Subagent node (top-middle, fades away after returning summary!)
-          if (sim.subAlive.value > 0.03) {
-            ctx.save();
-            ctx.globalAlpha = Math.max(0, Math.min(1, sim.subAlive.value));
-            const sw = 94;
-            const sh = 56;
-            fillRoundRect(ctx, subX - sw / 2, subY - sh / 2, sw, sh, 10, theme.bg, theme.teal, 1.5);
-            const subFill = Math.min(1, sim.subTokensK.value / 45);
-            fillRoundRect(ctx, subX - sw / 2 + 6, subY + sh / 2 - 14, (sw - 12) * subFill, 8, 3, theme.copper);
-            drawLabel(ctx, "Subagent", subX, subY - 10, { color: theme.teal, font: theme.fontSans, size: 11.5, weight: 600, align: "center" });
-            drawLabel(ctx, `${Math.round(sim.subTokensK.value)}K raw`, subX, subY + 4, { color: theme.muted, font: theme.fontSans, size: 10.5, align: "center" });
-            ctx.restore();
-          } else if (sim.mode === "subagent" && sim.done) {
-            drawLabel(ctx, "Subagent discarded", subX, subY, {
-              color: theme.dim,
-              font: theme.fontSans,
-              size: 11,
-              align: "center",
-            });
-          }
-
-          // Main Agent context tank (right)
-          const mw = 108;
-          const mh = 78;
-          const bloated = sim.mainTokensK.value > 22;
-          fillRoundRect(ctx, mainX - mw / 2, mainY - mh / 2, mw, mh, 11, theme.bg, bloated ? theme.copper : theme.sage, 1.6);
-
-          // Internal context fill bar rising from bottom
-          const fillFrac = Math.min(1, sim.mainTokensK.value / 54);
-          const barH = (mh - 14) * fillFrac;
-          fillRoundRect(
-            ctx,
-            mainX - mw / 2 + 7,
-            mainY + mh / 2 - 7 - barH,
-            mw - 14,
-            barH,
-            5,
-            bloated ? theme.copperBg : theme.sageBg,
-          );
-
-          drawLabel(ctx, "Main agent", mainX, mainY - 12, { color: theme.ink, font: theme.fontSans, size: 12, weight: 600, align: "center" });
-          drawLabel(ctx, `${sim.mainTokensK.value.toFixed(1)}K tokens`, mainX, mainY + 8, {
-            color: bloated ? theme.copper : theme.sage,
+          drawLabel(ctx, "1 square = 2K input tokens", padX, 18, {
+            color: theme.dim,
             font: theme.fontSans,
             size: 11.5,
-            weight: 600,
-            align: "center",
           });
+          drawLabel(ctx, `8-turn cost: ${runningCost.toFixed(1)}c`, width - padX, 18, {
+            color: mode === "single" ? theme.sage : theme.crimson,
+            font: theme.fontSans,
+            size: 12.5,
+            weight: 600,
+            align: "right",
+          });
+
+          for (let r = 0; r < visibleRows; r++) {
+            const row = data.rows[r];
+            const y = startY + r * (cellSize + 4);
+
+            // Subtle divider line whenever ownership switches to a brand-new agent
+            if (row.isHandoff) {
+              ctx.save();
+              ctx.setLineDash([3, 3]);
+              ctx.beginPath();
+              ctx.moveTo(padX, y - 2);
+              ctx.lineTo(width - padX, y - 2);
+              ctx.strokeStyle = theme.crimson;
+              ctx.globalAlpha = 0.45;
+              ctx.lineWidth = 1;
+              ctx.stroke();
+              ctx.restore();
+            }
+
+            drawLabel(ctx, row.owner, padX, y + cellSize / 2, {
+              color: row.isHandoff ? theme.crimson : theme.muted,
+              font: theme.fontSans,
+              size: 11,
+              weight: row.isHandoff ? 600 : 500,
+            });
+
+            row.cells.forEach((cell, c) => {
+              const x = startX + c * pitch;
+              const fill =
+                cell === "cached" ? theme.sage : cell === "cold" ? theme.crimson : theme.copper;
+              fillRoundRect(ctx, x, y, cellSize, cellSize, 3, fill);
+            });
+
+            if (row.isHandoff) {
+              const endX = startX + row.cells.length * pitch + 8;
+              drawLabel(ctx, "cold start", endX, y + cellSize / 2, {
+                color: theme.crimson,
+                font: theme.fontSans,
+                size: 10.5,
+                weight: 600,
+              });
+            }
+          }
+
+          // Bottom legend
+          const ly = height - 13;
+          let lx = padX;
+          for (const [label, col] of [
+            ["Cached prefix (0.1x)", theme.sage],
+            ["New tokens (1.0x)", theme.copper],
+            ["Cold prefill (1.0x)", theme.crimson],
+          ] as const) {
+            fillRoundRect(ctx, lx, ly - 4, 8, 8, 2, col);
+            drawLabel(ctx, label, lx + 12, ly, { color: theme.dim, font: theme.fontSans, size: 10.5 });
+            lx += ctx.measureText(label).width + 26;
+          }
         }}
       />
     </Figure>
@@ -307,188 +160,204 @@ export function ContextHygieneFigure() {
 }
 
 /* ==========================================================================
-   Figure 3: Error Compounding / Telephone Game (Interactive Fidelity Slider)
+   Figure 2: Attention Dilution & Disposable Subagent Extraction (Needle Field)
    ========================================================================== */
 
-export function TelephoneDriftFigure() {
-  const [fidelityPct, setFidelityPct] = useState(88);
-  const [verified, setVerified] = useState<"chain" | "verifier">("chain");
-  const rel = useMemo(() => computeChainReliability(fidelityPct / 100, 5), [fidelityPct]);
+// Deterministic scattered positions where the 4 real answers land inside the 80-cell haystack
+const ANSWER_POSITIONS = new Set([19, 37, 58, 74]);
 
-  const finalPct = Math.round((verified === "verifier" ? rel.verifiedSurvival : rel.unverifiedSurvival) * 100);
+export function NeedleGridFigure() {
+  const simRef = useRef(createNeedleSim("subagent"));
+  const [mode, setMode] = useState<NeedleMode>("subagent");
+
+  const switchMode = (next: NeedleMode) => {
+    setMode(next);
+    resetNeedleSim(simRef.current, next);
+  };
+
+  const replay = () => resetNeedleSim(simRef.current, mode);
 
   return (
     <Figure
       caption={
-        verified === "chain"
-          ? `At ${fidelityPct}% accuracy per handoff, 5 unverified hops drop end-to-end fidelity to ${finalPct}%.`
-          : `An isolated fresh-context verifier catches drift missed by the writer, lifting end-to-end fidelity to ${finalPct}%.`
+        mode === "inline"
+          ? "Searching inline dumps 76 noise blocks straight into working memory, burying your 12 real signal blocks at 14% density."
+          : "A disposable subagent absorbs the 76 noise blocks in a throwaway window, extracts the 4 teal answers, and disappears."
       }
       controls={
         <>
-          <Slider
-            label="Per-step fidelity"
-            min={75}
-            max={99}
-            step={1}
-            value={fidelityPct}
-            displayValue={`${fidelityPct}%`}
-            onChange={setFidelityPct}
-          />
           <Toggle
-            label="Verification mode"
-            value={verified}
-            onChange={setVerified}
+            label="Search isolation"
+            value={mode}
+            onChange={switchMode}
             options={[
-              { value: "chain", label: "Unverified chain" },
-              { value: "verifier", label: "+ Fresh verifier" },
+              { value: "inline", label: "Search inline" },
+              { value: "subagent", label: "Disposable subagent" },
             ]}
           />
+          <IconButton accent label="Replay search extraction" onClick={replay}>
+            <RotateCcw size={14} />
+          </IconButton>
         </>
       }
     >
       <CanvasStage
-        height={138}
-        running={false}
-        label="Signal survival curve across 5 agent handoffs showing exponential decay versus recovery with an isolated verifier"
-        onFrame={({ ctx, width, height, theme }) => {
+        height={196}
+        label="2D token grid showing how inline repo searches dilute signal cells under raw noise versus a disposable subagent extracting only the 4 answer cells"
+        onFrame={({ ctx, width, height, dt, theme }) => {
+          const sim = simRef.current;
+          stepNeedleSim(sim, dt);
+          const stats = getNeedleSignalRatio(sim);
           ctx.clearRect(0, 0, width, height);
 
-          const padX = 32;
-          const steps = verified === "verifier" ? [...rel.stageSurvival, rel.verifiedSurvival] : rel.stageSurvival;
-          const labels = verified === "verifier" ? ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5", "Verifier"] : ["Step 1", "Step 2", "Step 3", "Step 4", "Step 5"];
-          const spanW = width - padX * 2;
-          const midY = 66;
+          const padX = 20;
+          const topY = 44;
+          const boxH = height - topY - 26;
 
-          const pts = steps.map((val, i) => ({
-            x: padX + (i / (steps.length - 1)) * spanW,
-            y: midY + (1 - val) * 34 - 12,
-            val,
-            label: labels[i],
-            isVerifier: verified === "verifier" && i === steps.length - 1,
-          }));
-
-          // Connecting signal line
-          ctx.beginPath();
-          pts.forEach((pt, i) => {
-            if (i === 0) ctx.moveTo(pt.x, pt.y);
-            else ctx.lineTo(pt.x, pt.y);
+          drawLabel(ctx, "Main agent context window", padX, 18, {
+            color: theme.ink,
+            font: theme.fontSans,
+            size: 12,
+            weight: 600,
           });
-          ctx.strokeStyle = theme.lineStrong;
-          ctx.lineWidth = 2;
-          ctx.stroke();
+          drawLabel(ctx, `Signal density: ${stats.signalPct}%`, width - padX, 18, {
+            color: stats.signalPct > 60 ? theme.sage : theme.copper,
+            font: theme.fontSans,
+            size: 12,
+            weight: 600,
+            align: "right",
+          });
 
-          // Nodes sized & colored by surviving signal
-          for (const pt of pts) {
-            const color = pt.isVerifier ? theme.sage : pt.val < 0.65 ? theme.crimson : pt.val < 0.8 ? theme.copper : theme.teal;
-            const bg = pt.isVerifier ? theme.sageBg : pt.val < 0.65 ? theme.crimsonBg : pt.val < 0.8 ? theme.copperBg : theme.tealBg;
-            const r = 13 + pt.val * 6;
+          const mainW = sim.mode === "inline" ? width - padX * 2 : Math.round((width - padX * 2) * 0.44);
+          fillRoundRect(
+            ctx,
+            padX,
+            topY,
+            mainW,
+            boxH,
+            10,
+            theme.bg,
+            stats.signalPct > 60 ? theme.sage : theme.copper,
+            1.4,
+          );
 
-            ctx.fillStyle = bg;
-            ctx.strokeStyle = color;
-            ctx.lineWidth = 1.8;
-            ctx.beginPath();
-            ctx.arc(pt.x, pt.y, r, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.stroke();
+          const cell = 11;
+          const gap = 4;
+          const pitch = cell + gap;
+          const innerPad = 12;
 
-            drawLabel(ctx, `${Math.round(pt.val * 100)}%`, pt.x, pt.y, {
-              color: theme.ink,
-              font: theme.fontSans,
-              size: 10.5,
-              weight: 600,
-              align: "center",
-            });
-            drawLabel(ctx, pt.label, pt.x, height - 16, {
-              color: pt.isVerifier ? theme.sage : theme.dim,
-              font: theme.fontSans,
-              size: 10.5,
-              weight: pt.isVerifier ? 600 : 500,
-              align: "center",
-            });
+          if (sim.mode === "inline") {
+            // Everything floods into the Main box: 8 sage spec cells + 80 search cells (4 teal needles buried in 76 noise)
+            const cols = Math.max(8, Math.floor((mainW - innerPad * 2 + gap) / pitch));
+            const visibleSearch = Math.round(clamp(sim.progress / 0.78, 0, 1) * (NOISE_CELLS + ANSWER_CELLS));
+            const totalToDraw = SPEC_CELLS + visibleSearch;
+
+            for (let i = 0; i < totalToDraw; i++) {
+              const col = i % cols;
+              const row = Math.floor(i / cols);
+              const x = padX + innerPad + col * pitch;
+              const y = topY + innerPad + row * pitch;
+              if (y + cell > topY + boxH - 6) break;
+
+              let fill = theme.lineStrong;
+              if (i < SPEC_CELLS) {
+                fill = theme.sage;
+              } else {
+                const searchIdx = i - SPEC_CELLS;
+                fill = ANSWER_POSITIONS.has(searchIdx) ? theme.teal : theme.copperBg;
+              }
+              fillRoundRect(ctx, x, y, cell, cell, 2.5, fill);
+            }
+          } else {
+            // Left: Clean Main window holding 8 sage spec cells (+ 4 teal answer cells once extracted!)
+            const mainCols = Math.max(4, Math.floor((mainW - innerPad * 2 + gap) / pitch));
+            for (let i = 0; i < SPEC_CELLS; i++) {
+              const c = i % mainCols;
+              const r = Math.floor(i / mainCols);
+              fillRoundRect(ctx, padX + innerPad + c * pitch, topY + innerPad + r * pitch, cell, cell, 2.5, theme.sage);
+            }
+
+            // Right: Temporary Subagent sandbox absorbing all 76 noise + 4 teal answer cells
+            const subX = padX + mainW + 24;
+            const subW = width - padX - subX;
+            const subCols = Math.max(6, Math.floor((subW - innerPad * 2 + gap) / pitch));
+
+            // Compute start & end coordinates of the 4 teal answer cells so they physically fly across!
+            const answerStarts: { x: number; y: number }[] = [];
+            const answerTargets: { x: number; y: number }[] = [];
+            for (let a = 0; a < ANSWER_CELLS; a++) {
+              const idx = SPEC_CELLS + a;
+              answerTargets.push({
+                x: padX + innerPad + (idx % mainCols) * pitch,
+                y: topY + innerPad + Math.floor(idx / mainCols) * pitch,
+              });
+            }
+
+            if (sim.subSandboxAlpha.value > 0.03) {
+              ctx.save();
+              ctx.globalAlpha = Math.max(0, Math.min(1, sim.subSandboxAlpha.value));
+              ctx.setLineDash([4, 4]);
+              fillRoundRect(ctx, subX, topY, subW, boxH, 10, theme.bg, theme.lineStrong, 1.2);
+              ctx.setLineDash([]);
+
+              drawLabel(ctx, "Disposable subagent", subX + 2, topY - 12, {
+                color: theme.dim,
+                font: theme.fontSans,
+                size: 11,
+              });
+
+              const visibleSearch = Math.round(clamp(sim.progress / 0.48, 0, 1) * (NOISE_CELLS + ANSWER_CELLS));
+              for (let s = 0; s < visibleSearch; s++) {
+                const c = s % subCols;
+                const r = Math.floor(s / subCols);
+                const x = subX + innerPad + c * pitch;
+                const y = topY + innerPad + r * pitch;
+                if (y + cell > topY + boxH - 6) break;
+
+                if (ANSWER_POSITIONS.has(s)) {
+                  answerStarts.push({ x, y });
+                  if (sim.progress < 0.52) {
+                    fillRoundRect(ctx, x, y, cell, cell, 2.5, theme.teal);
+                  }
+                } else {
+                  fillRoundRect(ctx, x, y, cell, cell, 2.5, theme.copperBg);
+                }
+              }
+              ctx.restore();
+            } else {
+              drawLabel(ctx, "Subagent discarded (76 noise blocks dropped)", subX + subW / 2, topY + boxH / 2, {
+                color: theme.dim,
+                font: theme.fontSans,
+                size: 11.5,
+                align: "center",
+              });
+            }
+
+            // Smoothly fly the 4 extracted teal answer cells from the noisy subagent into the clean main box!
+            if (sim.progress >= 0.52) {
+              const flyT = easeOutCubic(clamp((sim.progress - 0.52) / 0.24, 0, 1));
+              for (let a = 0; a < ANSWER_CELLS; a++) {
+                const from = answerStarts[a] ?? { x: subX + 20, y: topY + 30 + a * 16 };
+                const to = answerTargets[a];
+                const x = from.x + (to.x - from.x) * flyT;
+                const y = from.y + (to.y - from.y) * flyT;
+                fillRoundRect(ctx, x, y, cell, cell, 2.5, theme.teal);
+              }
+            }
           }
-        }}
-      />
-    </Figure>
-  );
-}
 
-/* ==========================================================================
-   Figure 4: Topology Tradeoff Sandbox (Single vs. Swarm vs. Dispatcher)
-   ========================================================================== */
-
-export function TopologySandboxFigure() {
-  const [kind, setKind] = useState<TopologyKind>("dispatcher");
-  const spec = TOPOLOGIES[kind];
-
-  return (
-    <Figure
-      caption={spec.summary}
-      controls={
-        <Toggle
-          label="Agent topology"
-          value={kind}
-          onChange={setKind}
-          options={[
-            { value: "single", label: "Single loop" },
-            { value: "swarm", label: "Role swarm" },
-            { value: "dispatcher", label: "Dispatcher + verifier" },
-          ]}
-        />
-      }
-    >
-      <CanvasStage
-        height={138}
-        running={false}
-        label="Comparative meters for token cost, wall-clock latency, and context cleanliness across three agent topologies"
-        onFrame={({ ctx, width, theme }) => {
-          ctx.clearRect(0, 0, width, 138);
-
-          const padX = 24;
-          const labelW = 130;
-          const valueW = 68;
-          const barX = padX + labelW;
-          const barW = Math.max(80, width - padX * 2 - labelW - valueW);
-
-          const rows = [
-            {
-              label: "Token cost",
-              ratio: spec.costMultiplier / 3.8,
-              val: `${spec.costMultiplier.toFixed(2)}x`,
-              color: spec.costMultiplier > 2 ? theme.crimson : spec.costMultiplier > 1.2 ? theme.teal : theme.sage,
-            },
-            {
-              label: "Wall-clock latency",
-              ratio: spec.latencyMultiplier / 2.4,
-              val: `${spec.latencyMultiplier.toFixed(2)}x`,
-              color: spec.latencyMultiplier > 1.6 ? theme.copper : theme.sage,
-            },
-            {
-              label: "Context cleanliness",
-              ratio: spec.contextCleanliness / 100,
-              val: `${spec.contextCleanliness}%`,
-              color: spec.contextCleanliness > 85 ? theme.sage : spec.contextCleanliness > 60 ? theme.teal : theme.copper,
-            },
-          ];
-
-          rows.forEach((row, i) => {
-            const y = 32 + i * 38;
-            drawLabel(ctx, row.label, padX, y, {
-              color: theme.muted,
-              font: theme.fontSans,
-              size: 12,
-              weight: 500,
-            });
-            fillRoundRect(ctx, barX, y - 7, barW, 14, 5, theme.bg, theme.line, 1);
-            fillRoundRect(ctx, barX + 2, y - 5, Math.max(6, (barW - 4) * row.ratio), 10, 4, row.color);
-            drawLabel(ctx, row.val, width - padX, y, {
-              color: row.color,
-              font: theme.fontSans,
-              size: 12.5,
-              weight: 600,
-              align: "right",
-            });
-          });
+          // Quiet bottom legend
+          const ly = height - 11;
+          let lx = padX;
+          for (const [label, col] of [
+            ["Task spec", theme.sage],
+            ["Found answers", theme.teal],
+            ["Raw grep/log noise", theme.copperBg],
+          ] as const) {
+            fillRoundRect(ctx, lx, ly - 4, 8, 8, 2, col, col === theme.copperBg ? theme.copper : undefined, 1);
+            drawLabel(ctx, label, lx + 12, ly, { color: theme.dim, font: theme.fontSans, size: 10.5 });
+            lx += ctx.measureText(label).width + 26;
+          }
         }}
       />
     </Figure>

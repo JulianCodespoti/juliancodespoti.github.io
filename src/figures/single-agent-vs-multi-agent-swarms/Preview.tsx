@@ -1,72 +1,44 @@
 import { useRef } from "react";
-import { CanvasStage } from "../../runtime";
+import { CanvasStage, fillRoundRect } from "../../runtime";
 
-/** Miniature animated dispatcher + disposable subagent graph for the landing page (164 x 104). */
+/** Miniature Warm Staircase vs. Cold Handoff Mountains preview for the homepage (164 x 104). */
 export function MultiAgentPreview() {
-  const tRef = useRef(0);
+  const phaseRef = useRef(0);
 
   return (
     <CanvasStage
       height={104}
       framed={false}
-      label="Miniature preview of a main agent delegating work to a disposable subagent"
+      label="Miniature preview comparing a warm single-agent cache staircase against cold multi-agent handoff resets"
       onFrame={({ ctx, width, height, dt, theme }) => {
-        tRef.current = (tRef.current + dt * 0.5) % 1;
-        const t = tRef.current;
+        phaseRef.current = (phaseRef.current + dt * 0.28) % 1;
+        const isSwarm = phaseRef.current > 0.5;
         ctx.clearRect(0, 0, width, height);
 
-        const cx = width * 0.36;
-        const cy = height * 0.52;
-        const sx = width * 0.74;
-        const sy1 = height * 0.28;
-        const sy2 = height * 0.74;
+        const rows = 6;
+        const cell = 7;
+        const gap = 3;
+        const pitch = cell + gap;
+        const maxCols = 9;
+        const startX = Math.round((width - (maxCols * pitch - gap)) / 2);
+        const startY = Math.round((height - (rows * pitch - gap)) / 2);
 
-        // Edges
-        ctx.strokeStyle = theme.lineStrong;
-        ctx.lineWidth = 1.5;
-        ctx.beginPath();
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(sx, sy1);
-        ctx.moveTo(cx, cy);
-        ctx.lineTo(sx, sy2);
-        ctx.stroke();
-
-        // Traveling signal packets
-        const p1x = cx + (sx - cx) * t;
-        const p1y = cy + (sy1 - cy) * t;
-        ctx.fillStyle = theme.copper;
-        ctx.beginPath();
-        ctx.arc(p1x, p1y, 3.2, 0, Math.PI * 2);
-        ctx.fill();
-
-        const p2x = sx + (cx - sx) * t;
-        const p2y = sy2 + (cy - sy2) * t;
-        ctx.fillStyle = theme.sage;
-        ctx.beginPath();
-        ctx.arc(p2x, p2y, 3.2, 0, Math.PI * 2);
-        ctx.fill();
-
-        // Main agent node
-        ctx.fillStyle = theme.tealBg;
-        ctx.strokeStyle = theme.teal;
-        ctx.lineWidth = 1.6;
-        ctx.beginPath();
-        ctx.arc(cx, cy, 14, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.stroke();
-
-        // Subagent + verifier nodes
-        for (const [nx, ny, col, bg] of [
-          [sx, sy1, theme.copper, theme.copperBg],
-          [sx, sy2, theme.sage, theme.sageBg],
-        ] as const) {
-          ctx.fillStyle = bg;
-          ctx.strokeStyle = col;
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          ctx.arc(nx, ny, 9.5, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.stroke();
+        for (let r = 0; r < rows; r++) {
+          const y = startY + r * pitch;
+          if (!isSwarm) {
+            const cols = 3 + r;
+            for (let c = 0; c < cols; c++) {
+              const col = r === 0 || c === cols - 1 ? theme.copper : theme.sage;
+              fillRoundRect(ctx, startX + c * pitch, y, cell, cell, 1.5, col);
+            }
+          } else {
+            const isCold = r % 2 === 0;
+            const cols = isCold ? 4 + r : 5 + r;
+            for (let c = 0; c < Math.min(maxCols, cols); c++) {
+              const col = isCold ? theme.crimson : c >= cols - 2 ? theme.copper : theme.sage;
+              fillRoundRect(ctx, startX + c * pitch, y, cell, cell, 1.5, col);
+            }
+          }
         }
       }}
     />

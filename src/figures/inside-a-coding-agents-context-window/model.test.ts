@@ -1,57 +1,40 @@
 import { describe, expect, it } from "vitest";
 import {
-  appendTapeAction,
-  computeToolSchemaTax,
-  createContextTape,
-  createPrefixCacheState,
-  getPrefixCacheMetrics,
-  getTapeTotals,
-  mutatePrefixAt,
-  simulateCompaction,
+  buildTurnTriangle,
+  CAUSAL_BLOCKS,
+  createCausalCache,
+  editCausalBlock,
+  getCausalCacheStats,
 } from "./model";
 
 describe("Context Window Models", () => {
-  it("tracks verbose test logs as noise while subagent summaries stay tiny", () => {
-    const tape = createContextTape();
-    const initial = getTapeTotals(tape);
-    expect(initial.noiseRatio).toBe(0);
+  it("invalidates only blocks at or after the edited token while preserving left prefix", () => {
+    const state = createCausalCache(CAUSAL_BLOCKS.length - 1);
+    const tailEdit = getCausalCacheStats(state);
+    expect(tailEdit.hitRate).toBeGreaterThan(0.9);
 
-    appendTapeAction(tape, "logs");
-    const afterLogs = getTapeTotals(tape);
-    expect(afterLogs.total).toBeGreaterThan(initial.total + 20_000);
-    expect(afterLogs.noiseRatio).toBeGreaterThan(0.5);
+    editCausalBlock(state, 1); // edit Tools
+    const toolsEdit = getCausalCacheStats(state);
+    expect(toolsEdit.cachedK).toBe(CAUSAL_BLOCKS[0].tokensK); // only System survives
+    expect(toolsEdit.costCents).toBeGreaterThan(tailEdit.costCents * 3);
 
-    const cleanTape = createContextTape();
-    appendTapeAction(cleanTape, "subagent");
-    const afterSub = getTapeTotals(cleanTape);
-    expect(afterSub.total - initial.total).toBe(450);
-    expect(afterSub.noiseRatio).toBe(0);
+    editCausalBlock(state, 0); // edit System
+    const sysEdit = getCausalCacheStats(state);
+    expect(sysEdit.hitRate).toBe(0);
   });
 
-  it("scales tool schema overhead linearly across turns", () => {
-    const lean = computeToolSchemaTax(6);
-    const bloated = computeToolSchemaTax(50);
-    expect(bloated.schemaTokens).toBeGreaterThan(lean.schemaTokens * 8);
-    expect(bloated.twentyTurnTokens).toBe(bloated.schemaTokens * 20);
-  });
+  it("shows prefix caching slashes quadratic turn cost and frequent summarization costs more than staying cached", () => {
+    const uncached = buildTurnTriangle("uncached");
+    const cached = buildTurnTriangle("cached");
+    const summarize = buildTurnTriangle("summarize");
 
-  it("invalidates all downstream blocks when an early prefix block mutates", () => {
-    const cache = createPrefixCacheState();
-    const tailOnly = getPrefixCacheMetrics(cache);
-    expect(tailOnly.hitRate).toBeGreaterThan(0.9);
+    // Prefix caching turns O(N^2) uncached cost into a tiny fraction
+    expect(cached.totalCostCents).toBeLessThan(uncached.totalCostCents * 0.25);
 
-    mutatePrefixAt(cache, 0);
-    const systemMutated = getPrefixCacheMetrics(cache);
-    expect(systemMutated.hitRate).toBe(0);
-    expect(systemMutated.costCents).toBeGreaterThan(tailOnly.costCents * 5);
-  });
-
-  it("proves capping tool outputs beats frequent mid-context summarization on cumulative cost", () => {
-    const summarize = simulateCompaction("summarize");
-    const capped = simulateCompaction("cap_outputs");
-
-    expect(summarize.some((t) => t.cacheBroken)).toBe(true);
-    expect(capped.some((t) => t.cacheBroken)).toBe(false);
-    expect(capped.at(-1)!.cumulativeCents).toBeLessThan(summarize.at(-1)!.cumulativeCents);
+    // Frequent mid-session summarization breaks cache on turns 4, 8, 12 -> costs MORE than staying cached!
+    expect(summarize.totalCostCents).toBeGreaterThan(cached.totalCostCents);
+    expect(summarize.rows[3].cells.includes("miss")).toBe(true);
+    expect(summarize.rows[7].cells.includes("miss")).toBe(true);
+    expect(cached.rows.every((r) => !r.cells.includes("miss"))).toBe(true);
   });
 });

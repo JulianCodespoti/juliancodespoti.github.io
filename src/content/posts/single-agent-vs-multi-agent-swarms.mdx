@@ -1,10 +1,10 @@
 ---
 title: "Single Agent vs. Multi-Agent Swarms"
-subtitle: "Why role-based agent swarms usually lose to a plain loop, and the two places a second agent actually helps."
-description: "Why multi-agent role swarms pay cold-cache handoff penalties and drift across hops, and where disposable subagents and fresh verifiers genuinely pay off."
+subtitle: "Why role-based agent swarms lose to a plain loop on cache geometry, and the two places a second agent actually pays off."
+description: "Visualizing why multi-agent role swarms burn uncached prefill at every handoff, how disposable subagents prevent attention dilution, and why fresh-context verification catches writer bias."
 pubDate: 2026-11-24
-readingTime: "6 min read"
-simsCount: 4
+readingTime: "5 min read"
+simsCount: 2
 tags: ["Agents", "Architecture", "Systems"]
 preview: "single-agent-vs-multi-agent-swarms"
 featured: true
@@ -12,60 +12,48 @@ featured: true
 
 import { Cue } from "../../ui";
 import {
-  ContextHygieneFigure,
-  HandoffRaceFigure,
-  TelephoneDriftFigure,
-  TopologySandboxFigure,
+  CachePyramidFigure,
+  NeedleGridFigure,
 } from "../../figures/single-agent-vs-multi-agent-swarms/Figures";
 
-A year ago, every agent architecture diagram looked like a startup org chart. You had a Planner talking to a Researcher, who briefed a Coder, who handed a PR to a QA Reviewer. It looked great on a slide.
+A year ago, every agent architecture diagram looked like a startup org chart. You had a Planner talking to a Researcher, who briefed a Coder, who handed a PR to a QA Reviewer. It looked clean on a slide.
 
-Then people actually ran these setups on real repos and noticed something awkward: a single model in a 200-line loop usually finished faster, cost a fraction as much, and made fewer weird mistakes than the five-agent version.
+Then people actually ran these setups on real repos and hit an awkward result: a single model in a 200-line loop almost always finished faster, cost a fraction as much, and made fewer weird mistakes than the four-agent version.
 
-I don't think multi-agent setups are useless. Most of them just split work along human job titles instead of along actual system boundaries. Once you look at what happens to prompt caches, context windows, and error rates, it gets pretty obvious where extra agents hurt and where they pull their weight.
+I don't think multi-agent setups are useless. Most of them just split work along human job titles instead of along actual system boundaries. Look at the token geometry of a handoff and the reason becomes obvious in seconds.
 
-## The handoff tax
+## The geometry of the handoff tax
 
-Passing work from Agent A to Agent B looks like a thin arrow on a whiteboard. On the wire, you pay for it three ways.
+Passing work from Agent A to Agent B looks like a thin arrow on a whiteboard. Under the hood, it breaks the single biggest optimization modern LLM serving gives you: **prefix caching**.
 
-First, Agent B starts cold. It has its own system prompt and its own message history, so the provider can't reuse Agent A's KV prefix cache. You pay full prefill latency and full input cost all over again.
+A <Cue tone="sage">single agent</Cue> doing an eight-turn task pays cold prefill once on turn 1. On turns 2 through 8, its prefix stays warm and cached at 0.1x cost, so each step only pays full price for the thin sliver of new tokens it just added.
 
-Second, Agent A has to compress everything it learned into a handoff message. That summary almost always drops the small details that actually mattered: the weird edge case in line 42, the two approaches it already tried and ruled out, the exact flag that broke the build.
+Now split that same eight-turn task across a Planner, a Researcher, a Coder, and a Reviewer. Every time work crosses a role boundary, the new agent has a different system prompt and no shared KV prefix. Worse, because the handoff summary drops small details, the next agent usually re-reads the same files to orient itself. Instead of one warm staircase, you pay for four separate <Cue tone="crimson">cold starts</Cue>.
 
-Third, because that handoff is lossy, Agent B spends its first couple of turns re-reading the same files Agent A just had open.
+<CachePyramidFigure client:visible />
 
-A <Cue tone="sage">single warm loop</Cue> skips all of that. One unbroken prefix cache carries straight from reading to editing to running tests. Here is an illustrative race of the same four-step task across both setups:
+There is a second hidden cost to long chains: plain error multiplication. If each lossy handoff preserves 88% of your original constraints, five hops in a row leave you with `0.88^5`, or roughly 53%. Small ambiguities compound fast when nobody is looking at the original source of truth anymore.
 
-<HandoffRaceFigure client:visible />
+## When a second agent actually pays off
 
-## When a second agent is worth it
+If handoffs are that expensive, why ever spawn a second agent?
 
-If handoffs are that expensive, why spawn another agent at all?
+The strongest reason is **context hygiene**. Say you're tracking down a subtle lock bug in a big monorepo and need the answer to one narrow question: where is this mutex acquired?
 
-The best reason I've found is keeping noisy reads out of your main context. Say you're chasing down a lock bug in a big repo and you just need an answer to one question: where is this mutex acquired?
+If the main agent runs six greps and opens twelve files itself, tens of thousands of tokens of raw search output land straight inside its working window. Even if everything fits well under a 200K token limit, those irrelevant log lines drown out your actual spec and stay pinned in history for every edit that follows.
 
-If the main agent runs six greps and opens twelve files itself, 40,000 tokens of raw search output and unrelated code get glued into its history for the rest of the session. Every edit it makes after that drags those 40K tokens along for the ride.
+A short-lived, read-only subagent flips the math. You spin up a throwaway window, let it absorb all the raw grep noise, extract just the <Cue tone="teal">four relevant answers</Cue> with file paths and line numbers, hand them back to the main agent, and discard the subagent completely.
 
-A short-lived, read-only <Cue tone="teal">subagent</Cue> flips that around. Spin it up with one narrow question, let its throwaway window eat all 40K tokens of grep noise, take back a 400-token answer with file paths and line numbers, and throw the subagent away. Your main loop stays light and its prefix cache stays intact.
+<NeedleGridFigure client:visible />
 
-<ContextHygieneFigure client:visible />
+## The second exception: a fresh pair of eyes
 
-## Why chains drift (and why a fresh pair of eyes fixes it)
+There is one other place where a blank context window beats a warm one: final verification.
 
-The other problem with long agent relays is plain multiplication. If each handoff preserves 88% of what you actually asked for, five hops in a row leave you with `0.88^5`, or roughly 53%. Small ambiguities compound fast when nobody goes back to check the original source of truth.
+When a single agent writes 200 lines of code and you ask it to review its own diff in the same thread, its context is packed with its own rationalizations right above the code. It already talked itself into its assumptions. Handing the finished diff and the test suite to an independent verifier with an empty context window strips out writer bias. It reads the diff like a stranger's PR and catches skipped edge cases and half-wired paths the original loop glossed right over.
 
-There is one place where starting from a blank context actually helps, though: review.
+## What I actually run
 
-When a single agent writes 200 lines of code and you ask it to double-check its own work in the same thread, it's reading its own justification right above the diff. It already convinced itself that its assumptions hold. Hand the diff and the test suite to an independent <Cue tone="sage">verifier</Cue> with an empty context window instead, and it treats the code like a stranger's PR. It catches skipped edge cases and half-wired paths the original loop glossed right over.
+For focused bugs and small features, I just use one agent with a tight compiler and test loop. It keeps one warm cache, skips handoff drift, and stays trivial to debug.
 
-<TelephoneDriftFigure client:visible />
-
-## What I actually use
-
-Most tasks don't need orchestration at all. If I'm fixing a bug or building a self-contained feature, I just run one agent with a tight compiler and test loop. It's cheaper, faster, and much easier to debug when it goes sideways.
-
-I skip role-playing swarms completely. Splitting planning, coding, and reviewing into chatty personas mostly burns tokens while playing telephone with your own codebase.
-
-On bigger tasks where a single window starts to drown, the shape that holds up is simple: one main agent owns the plan and all edits, disposable read-only subagents handle broad codebase searches, and a fresh-context verifier checks the finished diff before wrapping up.
-
-<TopologySandboxFigure client:visible />
+I avoid role-playing swarms completely. When a task gets big enough that one context window starts drowning, the layout that actually works is simple: one main agent owns the plan and every file edit, disposable read-only subagents handle noisy repo searches, and one fresh-context verifier checks the finished diff before wrapping up.
