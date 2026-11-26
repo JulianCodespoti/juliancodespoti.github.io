@@ -1,7 +1,7 @@
 import { clamp } from "../../runtime/canvas/math";
 
 /* ==========================================================================
-   1. Real-Shaped 18-Turn Coding Session Anatomy (Hover/Click Inspector)
+   1. Real-Shaped Coding Session Anatomy (Hover/Scrub + Live Log Crop)
    ========================================================================== */
 
 export type SliceCategory = "system" | "tools" | "user" | "code" | "logs";
@@ -31,22 +31,37 @@ export const SESSION_SLICES: readonly SessionSlice[] = [
 
 export const SESSION_TOTAL_TOKENS = SESSION_SLICES.reduce((acc, s) => acc + s.tokens, 0);
 
+export function getSessionSlices(croppedLogs: boolean): SessionSlice[] {
+  if (!croppedLogs) return SESSION_SLICES.map((s) => ({ ...s }));
+  return SESSION_SLICES.map((s) =>
+    s.id === "t1"
+      ? {
+          ...s,
+          label: "cargo test (capped 120 lines)",
+          tokens: 1_400,
+          preview: "Head + tail summary (360 noisy middle lines omitted; full log on disk)",
+        }
+      : { ...s },
+  );
+}
+
 /* ==========================================================================
    2. Causal Attention Dependency Model (Why Prefix Caching Breaks Left->Right)
    ========================================================================== */
 
 export interface CausalBlock {
   label: string;
+  shortLabel: string;
   tokensK: number;
 }
 
 export const CAUSAL_BLOCKS: readonly CausalBlock[] = [
-  { label: "System", tokensK: 3 },
-  { label: "Tools", tokensK: 6 },
-  { label: "Turn 1", tokensK: 8 },
-  { label: "Turn 2", tokensK: 11 },
-  { label: "Turn 3", tokensK: 13 },
-  { label: "Turn 4", tokensK: 4 },
+  { label: "System", shortLabel: "Sys", tokensK: 3 },
+  { label: "Tools", shortLabel: "Tools", tokensK: 6 },
+  { label: "Turn 1", shortLabel: "T1", tokensK: 8 },
+  { label: "Turn 2", shortLabel: "T2", tokensK: 11 },
+  { label: "Turn 3", shortLabel: "T3", tokensK: 13 },
+  { label: "Turn 4", shortLabel: "T4", tokensK: 4 },
 ] as const;
 
 export interface CausalCacheState {
@@ -66,7 +81,7 @@ export function editCausalBlock(state: CausalCacheState, index: number) {
 
 export function stepCausalCache(state: CausalCacheState, dt: number) {
   if (state.ripple < 1) {
-    state.ripple = clamp(state.ripple + dt * 2.1, 0, 1);
+    state.ripple = clamp(state.ripple + dt * 2.2, 0, 1);
   }
 }
 
@@ -81,7 +96,8 @@ export function getCausalCacheStats(state: CausalCacheState) {
   const hitRate = totalK > 0 ? cachedK / totalK : 0;
   const costCents = (cachedK * 0.03 + recomputedK * 0.3) / 10;
   const fullCostCents = (totalK * 0.3) / 10;
-  return { cachedK, recomputedK, totalK, hitRate, costCents, fullCostCents };
+  const bestCostCents = ((totalK - CAUSAL_BLOCKS[CAUSAL_BLOCKS.length - 1].tokensK) * 0.03 + CAUSAL_BLOCKS[CAUSAL_BLOCKS.length - 1].tokensK * 0.3) / 10;
+  return { cachedK, recomputedK, totalK, hitRate, costCents, fullCostCents, bestCostCents };
 }
 
 /* ==========================================================================
@@ -94,6 +110,8 @@ export type CellState = "cached" | "new" | "miss";
 export interface TriangleRow {
   turn: number;
   cells: CellState[];
+  cachedK: number;
+  fullK: number;
   turnCostCents: number;
 }
 
@@ -155,7 +173,13 @@ export function buildTurnTriangle(mode: TriangleMode): {
 
     const turnCostCents = rowCached * 0.06 + rowFull * 0.6;
     totalCostCents += turnCostCents;
-    rows.push({ turn, cells, turnCostCents });
+    rows.push({
+      turn,
+      cells,
+      cachedK: rowCached * CELL_TOKENS_K,
+      fullK: rowFull * CELL_TOKENS_K,
+      turnCostCents,
+    });
   }
 
   return {
@@ -172,9 +196,9 @@ export function buildTurnTriangle(mode: TriangleMode): {
    ========================================================================== */
 
 export interface HarnessConfig {
-  staticSystem: boolean; // false = live timestamp in block 0 -> 0% cache hit!
-  leanTools: boolean; // true = 8 tools (3.6K), false = 45 MCP tools (20.2K)
-  capLogs: boolean; // true = 1.8K/turn avg growth, false = 5.4K/turn with raw test dumps
+  staticSystem: boolean;
+  leanTools: boolean;
+  capLogs: boolean;
 }
 
 export interface HarnessBudgetResult {
@@ -183,6 +207,8 @@ export interface HarnessBudgetResult {
   cachedHitRate: number;
   totalCostUsd: number;
   turnCostsUsd: number[];
+  turnCachedCostsUsd: number[];
+  turnUncachedCostsUsd: number[];
 }
 
 export function simulateHarness20Turns(cfg: HarnessConfig): HarnessBudgetResult {
@@ -196,6 +222,8 @@ export function simulateHarness20Turns(cfg: HarnessConfig): HarnessBudgetResult 
   let totalUncachedK = 0;
   let totalCostUsd = 0;
   const turnCostsUsd: number[] = [];
+  const turnCachedCostsUsd: number[] = [];
+  const turnUncachedCostsUsd: number[] = [];
 
   for (let t = 1; t <= turns; t++) {
     const newK = perTurnGrowthK;
@@ -209,11 +237,14 @@ export function simulateHarness20Turns(cfg: HarnessConfig): HarnessBudgetResult 
       uncachedK = newK;
     }
 
-    // cachedK and uncachedK are in thousands of tokens (1000 K = 1 M tokens)
-    const turnUsd = (cachedK * 0.3 + uncachedK * 3.0) / 1_000;
+    const cachedUsd = (cachedK * 0.3) / 1_000;
+    const uncachedUsd = (uncachedK * 3.0) / 1_000;
+    const turnUsd = cachedUsd + uncachedUsd;
     totalCachedK += cachedK;
     totalUncachedK += uncachedK;
     totalCostUsd += turnUsd;
+    turnCachedCostsUsd.push(cachedUsd);
+    turnUncachedCostsUsd.push(uncachedUsd);
     turnCostsUsd.push(turnUsd);
     prefixK += newK;
   }
@@ -225,5 +256,7 @@ export function simulateHarness20Turns(cfg: HarnessConfig): HarnessBudgetResult 
     cachedHitRate: totalInputK > 0 ? totalCachedK / totalInputK : 0,
     totalCostUsd,
     turnCostsUsd,
+    turnCachedCostsUsd,
+    turnUncachedCostsUsd,
   };
 }

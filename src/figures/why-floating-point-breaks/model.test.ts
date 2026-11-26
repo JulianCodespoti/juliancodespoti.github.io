@@ -2,7 +2,10 @@ import { describe, expect, it } from "vitest";
 import {
   decodeFloat16,
   encodeFloat16,
+  formatHex16,
   inspectOctaveGap,
+  snapFloat16Offset,
+  stepFloat16Ulp,
   toggleFloat16Bit,
   traceFloat16Addition,
 } from "./model";
@@ -61,5 +64,29 @@ describe("IEEE 754 binary16 model", () => {
     expect(stuck.shift).toBe(11);
     expect(stuck.smallAlignedKept.every((b) => b === null)).toBe(true);
     expect(stuck.resultValue).toBe(2048);
+  });
+
+  it("steps exactly +/- 1 ULP across positive, negative, zero, and large values", () => {
+    const b01 = encodeFloat16(0.1);
+    expect(formatHex16(b01)).toBe("0x2e66");
+    const next01 = decodeFloat16(stepFloat16Ulp(b01, 1));
+    expect(next01.value).toBeGreaterThan(0.1);
+    expect(next01.value - decodeFloat16(b01).value).toBeCloseTo(decodeFloat16(b01).ulp, 12);
+
+    const b2048 = encodeFloat16(2048);
+    expect(decodeFloat16(stepFloat16Ulp(b2048, 1)).value).toBe(2050);
+    expect(decodeFloat16(stepFloat16Ulp(b2048, -1)).value).toBe(2047);
+
+    // Crosses zero cleanly and preserves NaN
+    expect(stepFloat16Ulp(0x0000, -1)).toBe(0x8001);
+    expect(stepFloat16Ulp(0x8001, 1)).toBe(0x0000);
+    expect(stepFloat16Ulp(0x7e00, 1)).toBe(0x7e00);
+  });
+
+  it("snaps arbitrary offsets around 2^11 using round-to-nearest-even", () => {
+    expect(snapFloat16Offset(11, 1).snapped).toBe(2048);
+    expect(snapFloat16Offset(11, 1).stuck).toBe(true);
+    expect(snapFloat16Offset(11, 1.25).snapped).toBe(2050);
+    expect(snapFloat16Offset(11, 1.25).stuck).toBe(false);
   });
 });

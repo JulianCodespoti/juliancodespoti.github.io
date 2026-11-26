@@ -31,7 +31,7 @@ Take a concrete 12-step bugfix on a Rust server. The user writes two short promp
 <SessionAnatomyFigure client:visible />
 
 <TryThis>
-Hover across the strip and compare the two tiny user slices against the single orange test failure right in the middle.
+Scrub across the strip to compare the two tiny user slices against the single orange test failure in the middle, then flip <code>Uncropped test log (19.8K)</code> to watch capping it at 120 lines free 18.4K tokens immediately.
 </TryThis>
 
 Before turn 1 even starts, there is also a fixed prefix tax from tool definitions. Every tool your harness exposes has to be described as JSON (parameters, types, enums, descriptions), usually costing around 400 to 500 tokens per tool. Six or eight crisp primitives (`read`, `edit`, `write`, `grep`, `find`, `bash`) take roughly 3.6K tokens. Attaching 45 MCP tools "just in case" locks up 20K+ tokens before the model has read a single line of your repo.
@@ -47,7 +47,7 @@ Change even one byte near the front of the prompt, such as putting a live `Curre
 <CausalCacheFigure client:visible />
 
 <TryThis>
-Hover from right (`Turn 4`) back to left (`System`) and watch both the crimson dependency arcs and the per-turn input cost jump by 5x.
+Tap or sweep from right (<code>Turn 4</code>) back to left (<code>System</code>) and watch the crimson dependency arrows propagate rightward while per-turn cost jumps more than 5x.
 </TryThis>
 
 Three practical harness rules fall straight out of causal attention. First, keep the system prompt completely static; if the model needs the current time, git branch, or open tab list, inject it into the latest user turn instead of mutating block 0. Second, freeze the tool list for the life of a session. Third, treat the message array as an append-only log during active work.
@@ -88,5 +88,5 @@ Toggle all three levers below against the ghosted worst-case bars to see how muc
 <HarnessBudgetSandbox client:visible />
 
 <TryThis>
-Flip only <code>Live timestamp in system</code> to <code>Static system prompt</code> first. Notice that fixing prefix caching alone cuts more cost than trimming tools and logs combined, and combining all three drops the 20-turn session from $4.80 down to $0.27.
+Flip only <code>Live timestamp in system</code> to <code>Static system prompt</code> first. Notice that fixing prefix caching alone collapses the red full-price bars down to thin slivers, and combining all three drops the 20-turn session from $4.80 down to $0.27.
 </TryThis>

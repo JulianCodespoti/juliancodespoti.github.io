@@ -48,8 +48,8 @@ function cardTree({ title, subtitle, meta }) {
       style: {
         width: "1200px",
         height: "630px",
-        backgroundColor: "#0f1012",
-        color: "#eaecef",
+        backgroundColor: "#0e1013",
+        color: "#eef0f4",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
@@ -112,9 +112,9 @@ function cardTree({ title, subtitle, meta }) {
                       props: {
                         style: { display: "flex", gap: "8px", alignItems: "center" },
                         children: [
-                          { type: "div", props: { style: { width: "14px", height: "14px", borderRadius: "3px", backgroundColor: "#48b07b" } } },
-                          { type: "div", props: { style: { width: "28px", height: "14px", borderRadius: "3px", backgroundColor: "#34a8a3" } } },
-                          { type: "div", props: { style: { width: "52px", height: "14px", borderRadius: "3px", backgroundColor: "#e07a47" } } },
+                          { type: "div", props: { style: { width: "14px", height: "14px", borderRadius: "3px", backgroundColor: "#52bd85" } } },
+                          { type: "div", props: { style: { width: "28px", height: "14px", borderRadius: "3px", backgroundColor: "#3fb8b2" } } },
+                          { type: "div", props: { style: { width: "52px", height: "14px", borderRadius: "3px", backgroundColor: "#e6824e" } } },
                         ],
                       },
                     },

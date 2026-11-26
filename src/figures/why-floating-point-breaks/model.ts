@@ -1,7 +1,7 @@
 import { clamp } from "../../runtime/canvas/math";
 
 /* ==========================================================================
-   1. Exact IEEE 754 binary16 (Half-Precision) Bit Decoder & Encoder
+   1. Exact IEEE 754 binary16 (Half-Precision) Bit Decoder, Encoder & ULP Stepper
    ========================================================================== */
 
 export interface Float16Decoded {
@@ -148,12 +148,43 @@ export function toggleFloat16Bit(bits: number, bitIndexMsbFirst: number): number
   return (bits ^ (1 << shift)) & 0xffff;
 }
 
+/** Steps to the exact next (+1) or previous (-1) representable IEEE 754 binary16 bit pattern. */
+export function stepFloat16Ulp(rawBits: number, delta: 1 | -1): number {
+  const bits = rawBits & 0xffff;
+  const decoded = decodeFloat16(bits);
+  if (decoded.kind === "nan") return bits;
+
+  const mag = bits & 0x7fff;
+  const neg = (bits & 0x8000) !== 0;
+
+  if (mag === 0) {
+    // From +0 or -0: +1 goes to smallest positive subnormal (0x0001), -1 to -subnormal (0x8001)
+    return delta > 0 ? 0x0001 : 0x8001;
+  }
+
+  if (!neg) {
+    if (delta > 0) {
+      return mag >= 0x7c00 ? 0x7c00 : mag + 1;
+    }
+    return mag - 1;
+  } else {
+    if (delta > 0) {
+      return mag === 1 ? 0x0000 : 0x8000 | (mag - 1);
+    }
+    return mag >= 0x7c00 ? 0xfc00 : 0x8000 | (mag + 1);
+  }
+}
+
+export function formatHex16(bits: number): string {
+  return `0x${(bits & 0xffff).toString(16).padStart(4, "0")}`;
+}
+
 export const FLOAT16_PRESETS = [
-  { label: "0.1", bits: encodeFloat16(0.1) }, // 0x2e66 -> 0.0999755859375 (repeating 1001100110)
-  { label: "0.2", bits: encodeFloat16(0.2) }, // 0x3266 -> 0.199951171875
-  { label: "1.0", bits: encodeFloat16(1.0) }, // 0x3c00
-  { label: "2048", bits: encodeFloat16(2048) }, // 0x6800 (ulp = 2 -> 2048 + 1 === 2048!)
-  { label: "NaN", bits: 0x7e00 },
+  { label: "0.1", target: 0.1, bits: encodeFloat16(0.1) },
+  { label: "0.2", target: 0.2, bits: encodeFloat16(0.2) },
+  { label: "1.0", target: 1.0, bits: encodeFloat16(1.0) },
+  { label: "2048", target: 2048, bits: encodeFloat16(2048) },
+  { label: "NaN", target: NaN, bits: 0x7e00 },
 ] as const;
 
 export function formatFloat16Value(d: Float16Decoded): string {
@@ -195,6 +226,21 @@ export function inspectOctaveGap(octave: number): OctaveGapInfo {
   };
 }
 
+/** Exact float16 rounding for an arbitrary offset `delta` added to 2^octave. */
+export function snapFloat16Offset(octave: number, delta: number) {
+  const info = inspectOctaveGap(octave);
+  const exact = info.x + delta;
+  const snapped = decodeFloat16(encodeFloat16(exact)).value;
+  return {
+    base: info.x,
+    delta,
+    exact,
+    snapped,
+    ulp: info.rightGap,
+    stuck: delta > 0 && snapped === info.x,
+  };
+}
+
 /* ==========================================================================
    3. Exact Binary16 Addition Trace (Exponent Alignment + Dropped Guard Bits)
    ========================================================================== */
@@ -208,6 +254,7 @@ export interface FloatAddTrace {
   alignedExp: number;
   shift: number;
   bigBits11: number[]; // 11 bits: [implicit 1, m9..m0]
+  smallOrig11: number[]; // unshifted 11-bit significand of smaller operand
   smallAlignedKept: (number | null)[]; // 11 slots (leading nulls when shifted right)
   smallDroppedBits: number[]; // bits pushed past the 10-bit mantissa wall!
   sumBits11: number[]; // resulting rounded 11-bit significand
@@ -215,6 +262,7 @@ export interface FloatAddTrace {
   resultValue: number;
   exactDecimal: number;
   lostBits: boolean;
+  guardBit: number;
 }
 
 export function traceFloat16Addition(aInput: number, bInput: number, label: string): FloatAddTrace {
@@ -237,7 +285,6 @@ export function traceFloat16Addition(aInput: number, bInput: number, label: stri
     return src >= 0 && src < 11 ? smallOrig11[src] : null;
   });
 
-  // Bits shifted past bit 0 of the 11-bit significand (up to 4 shown cleanly in the dropped tray)
   const smallDroppedBits: number[] = [];
   if (shift > 0) {
     for (let k = 0; k < Math.min(shift, 5); k++) {
@@ -262,6 +309,7 @@ export function traceFloat16Addition(aInput: number, bInput: number, label: stri
     alignedExp: big.exponent,
     shift,
     bigBits11,
+    smallOrig11,
     smallAlignedKept,
     smallDroppedBits,
     sumBits11,
@@ -269,6 +317,6 @@ export function traceFloat16Addition(aInput: number, bInput: number, label: stri
     resultValue: sumDec.value,
     exactDecimal,
     lostBits,
+    guardBit: smallDroppedBits[0] ?? 0,
   };
 }
-

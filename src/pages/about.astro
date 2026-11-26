@@ -15,7 +15,7 @@ import { SITE } from "../site.config";
         I'm {SITE.author} (hence <code>{SITE.brand}</code>). I build fast, local-first software and like pulling systems apart until you can actually see how they behave.
       </p>
       <p>
-        Most posts here include small live simulations running in your browser so you can poke at memory, latency, and context limits yourself instead of taking benchmarks on faith.
+        Most posts here include live simulations running locally in your browser so you can poke at memory, latency, floating-point bits, and context limits yourself instead of taking benchmarks on faith.
       </p>
 
       <h2>Projects</h2>
@@ -23,13 +23,16 @@ import { SITE } from "../site.config";
         {SITE.projects.map((project) => (
           <li>
             <a href={project.url} target="_blank" rel="noopener noreferrer">{project.name}</a>: {project.summary}
+            {project.demoUrl && (
+              <> (<a href={project.demoUrl} target="_blank" rel="noopener noreferrer">live demo</a>)</>
+            )}
           </li>
         ))}
       </ul>
 
       <h2>How this site is built</h2>
       <p>
-        Static Astro and MDX, zero analytics trackers, zero third-party embeds, and small hand-drawn HTML5 canvas simulations backed by unit-tested TypeScript models. Every figure responds live to both dark and light paper themes (press <code>T</code> anywhere to switch) and pauses automatically when off-screen.
+        Static Astro and MDX, zero analytics trackers, zero third-party embeds, and hand-drawn HTML5 canvas instruments backed by unit-tested TypeScript models. Every figure responds live to both dark and light paper themes (press <kbd>T</kbd> anywhere to switch) and pauses automatically when off-screen.
       </p>
 
       <h2>Links</h2>

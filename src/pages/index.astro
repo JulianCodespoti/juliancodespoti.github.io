@@ -15,8 +15,15 @@ for (const p of posts) {
     tagCounts.set(t, (tagCounts.get(t) ?? 0) + 1);
   }
 }
-const allTags = Array.from(tagCounts.keys()).sort();
-const showTagFilter = posts.length >= 2 && allTags.length >= 2;
+
+// Show only meaningful topic clusters (>= 2 posts) so the filter bar stays calm and scannable
+const filterTags = Array.from(tagCounts.entries())
+  .filter(([, count]) => count >= 2)
+  .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+  .map(([tag]) => tag);
+
+const showTagFilter = posts.length >= 3 && filterTags.length >= 2;
+const totalSims = posts.reduce((acc, p) => acc + (p.data.simsCount ?? 0), 0);
 ---
 
 <BaseLayout
@@ -34,14 +41,17 @@ const showTagFilter = posts.length >= 2 && allTags.length >= 2;
     </section>
 
     <section class="home-section" aria-labelledby="writing-heading">
-      <h2 class="section-kicker" id="writing-heading">Writing</h2>
+      <div class="section-header-row">
+        <h2 class="section-kicker" id="writing-heading">Writing</h2>
+        <span class="section-sub-note">{posts.length} essays · {totalSims} live figures</span>
+      </div>
 
       {showTagFilter && (
         <div class="tag-bar" role="group" aria-label="Filter posts by topic">
           <button type="button" class="ui-btn ui-btn--active" data-tag-filter="all" aria-pressed="true">
             All <span class="tag-count">{posts.length}</span>
           </button>
-          {allTags.map((tag) => (
+          {filterTags.map((tag) => (
             <button type="button" class="ui-btn" data-tag-filter={tag} aria-pressed="false">
               {tag} <span class="tag-count">{tagCounts.get(tag)}</span>
             </button>
@@ -70,10 +80,10 @@ const showTagFilter = posts.length >= 2 && allTags.length >= 2;
                     <time datetime={post.data.pubDate.toISOString()}>{date}</time>
                     <span>·</span>
                     <span>{post.data.readingTime}</span>
-                    {post.data.tags.length > 0 && (
+                    {post.data.simsCount > 0 && (
                       <>
                         <span>·</span>
-                        <span>{post.data.tags.join(", ")}</span>
+                        <span class="post-card-sims">{post.data.simsCount} figures</span>
                       </>
                     )}
                   </div>
@@ -88,14 +98,25 @@ const showTagFilter = posts.length >= 2 && allTags.length >= 2;
     </section>
 
     <section class="home-section" aria-labelledby="projects-heading">
-      <h2 class="section-kicker" id="projects-heading">Projects</h2>
+      <div class="section-header-row">
+        <h2 class="section-kicker" id="projects-heading">Projects</h2>
+      </div>
       <ul class="project-list">
         {SITE.projects.map((project) => (
           <li class="project-row">
-            <a class="project-name" href={project.url} target="_blank" rel="noopener noreferrer">
-              {project.name}
-            </a>
-            <span class="project-stack">{project.stack}</span>
+            <div class="project-row-head">
+              <div class="project-title-group">
+                <a class="project-name" href={project.url} target="_blank" rel="noopener noreferrer">
+                  {project.name}
+                </a>
+                {project.demoUrl && (
+                  <a class="project-demo-link" href={project.demoUrl} target="_blank" rel="noopener noreferrer">
+                    Live demo
+                  </a>
+                )}
+              </div>
+              <span class="project-stack">{project.stack}</span>
+            </div>
             <p class="project-desc">{project.summary}</p>
           </li>
         ))}

@@ -1,7 +1,7 @@
 ---
 title: "How GPS Finds You Using a Bad Clock"
-subtitle: "Why a one-microsecond error in your phone's clock puts you 300 meters off, how satellite geometry magnifies noise, and how one extra satellite cancels the drift out."
-description: "An interactive 2D visualization of satellite trilateration, GDOP geometry dilution, pseudorange clock bias, and a real Gauss-Newton solver recovering position and clock error."
+subtitle: "Why a one-microsecond error in your phone's clock puts you 300 meters off, how satellite geometry stretches your error ellipse, and how one extra satellite cancels the drift out."
+description: "An interactive 2D visualization of satellite trilateration, GDOP covariance ellipses, pseudorange clock bias, and a step-by-step Gauss-Newton solver recovering position and clock error."
 pubDate: 2026-11-25
 readingTime: "6 min read"
 simsCount: 2
@@ -28,12 +28,12 @@ The way GPS turns a terrible receiver clock into meter-level accuracy is one of 
 
 Start on a flat 2D map and pretend your phone's clock is synced to the satellites. Knowing your distance from one satellite puts you on a circle around it. Add a second satellite and the two circles intersect at two spots: your real location and a <Cue tone="crimson">mirror twin</Cue>. A third satellite breaks the tie and pins down `(x, y)`.
 
-Even with three satellites, *where* they sit in the sky matters almost as much as your timing accuracy. Real radio measurements always carry a small band of atmospheric noise (drawn as the faint thick band around each circle below). When satellites surround you evenly, those bands cross at nearly right angles, keeping your uncertainty small. When all three cluster on one side of the sky, the circles graze each other at shallow angles and the overlapping zone stretches out. Navigation engineers call this **GDOP** (Geometric Dilution of Precision).
+Even with three satellites, *where* they sit in the sky matters almost as much as your timing accuracy. Real radio measurements always carry a small band of atmospheric noise (drawn as the faint thick band around each circle below). When satellites surround you evenly, those bands cross at nearly right angles, keeping your uncertainty tight and nearly circular. When all three cluster on one side of the sky, the circles graze each other at shallow angles and range error trades off against clock bias, stretching your true error ellipse sharply along the line of sight. Navigation engineers call this **GDOP** (Geometric Dilution of Precision).
 
 <TrilaterationFigure client:visible />
 
 <TryThis>
-Hit <code>Cluster satellites</code> (or drag all three teal dots to the top edge yourself) and watch <code>GDOP</code> jump from ~1.2 into double digits while the uncertainty halo around you explodes. That is why GPS struggles inside urban canyons between skyscrapers.
+Tap <code>Cluster satellites</code> (or drag all three teal satellites toward the top edge yourself) and watch <code>GDOP</code> jump from ~1.9 into double digits while the uncertainty ellipse stretches wide across the map. That is why GPS drifts inside urban canyons between skyscrapers.
 </TryThis>
 
 ## Now break the phone's clock
@@ -44,12 +44,12 @@ If your clock runs `0.32` microseconds fast, all three circles grow by `96` mete
 
 Here is the trick. Because all three circles are wrong by the exact same unknown offset `b`, you don't have two unknowns (`x, y`) anymore; you have **three** (`x, y, b`). And three circles give you three nonlinear equations.
 
-Hit **Solve clock offset** below to run a real 3x3 Gauss-Newton solver in your browser. It nudges `(x, y)` and shrinks or expands all three rings together until the mismatch drops to zero, recovering both your <Cue tone="sage">exact position</Cue> and your phone's hidden clock bias.
+Hit **Solve clock offset** (or step through one iteration at a time) below to run a real 3x3 Gauss-Newton solver in your browser. It nudges `(x, y)` and shrinks or expands all three rings together until the mismatch drops to zero, recovering both your <Cue tone="sage">exact position</Cue> and your phone's hidden clock bias.
 
 <ClockDriftSolverFigure client:visible />
 
 <TryThis>
-Drag the clock error slider into negative territory (like <code>-0.36 us</code>, where your phone clock is running slow and the rings shrink too small to meet), then hit <code>Solve clock offset</code>. Notice the solver converges in 4 iterations in either direction.
+Scrub the clock error slider into negative territory (like <code>-0.36 us</code>, where your phone clock runs slow and the rings shrink too small to meet), then click <code>Step</code> repeatedly to watch the solver walk in and lock down in 4 iterations.
 </TryThis>
 
 ## 3D space and Einstein's +38 microseconds per day

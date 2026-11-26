@@ -1,7 +1,7 @@
 ---
 title: "Why 0.1 + 0.2 Isn't 0.3 (and Why Minecraft Has the Far Lands)"
 subtitle: "How IEEE 754 packs huge ranges into fixed bits, where the dropped rounding bit comes from, and why the gap between numbers doubles every octave."
-description: "An interactive exploration of IEEE 754 floating-point bits, bit-level 0.1 + 0.2 exponent alignment, doubling ULP gaps, and why large game-world coordinates break."
+description: "An interactive exploration of IEEE 754 floating-point bits, animated bit-level 0.1 + 0.2 exponent alignment, doubling ULP gaps, and why large game-world coordinates break."
 pubDate: 2026-11-24
 readingTime: "6 min read"
 simsCount: 3
@@ -30,7 +30,7 @@ In base 10, `1/3` never terminates (`0.33333...`) because 3 doesn't divide 10. I
 <FloatBitsFigure client:visible />
 
 <TryThis>
-Click <code>0.1</code> and then <code>0.2</code>. Notice that all 10 green mantissa bits stay completely identical (<code>1001100110</code>): doubling a float only bumps the teal exponent field by 1.
+Tap <code>0.1</code> and then hit <code>+1 ULP</code> once: it jumps straight from <code>0.0999756</code> to <code>0.1000366</code>, proving exact <code>0.1</code> sits in the void between adjacent bit patterns. Then compare <code>0.1</code> and <code>0.2</code> to see all 10 green mantissa bits stay identical while the teal exponent bumps by 1.
 </TryThis>
 
 ## What actually happens when you add `0.1 + 0.2`
@@ -42,7 +42,7 @@ Anything pushed past the right edge of the mantissa register hits a hard <Cue to
 <FloatAdderFigure client:visible />
 
 <TryThis>
-Click <code>2048 + 1</code> above. Aligning <code>1</code> (exponent 0) with <code>2048</code> (exponent 11) shifts its single <code>1</code> bit 11 slots to the right, completely past the 10-bit wall, so the sum never changes at all.
+Select <code>2048 + 1</code> above and watch <code>1</code> slide 11 slots to the right, completely past the 10-bit wall, leaving the sum untouched at <code>2048</code>.
 </TryThis>
 
 ## Why the number line stretches out (and `x + 1 === x`)
@@ -54,5 +54,9 @@ Every power-of-two interval (`[1, 2]`, `[2, 4]`, `[1024, 2048]`, `[2048, 4096]`)
 Between `1` and `2`, the ticks sit `0.00098` apart. By `1024`, those same 1,024 ticks are spaced `1.0` apart. Step past `2048`, and the gap widens to `2.0`, so `2048 + 1` lands in the void and rounds straight back to `2048`.
 
 <NumberLineZoomFigure client:visible />
+
+<TryThis>
+Slide from <code>1,024</code> to <code>2,048</code> and press <code>Try +1</code> to feel the jump snap back into place. Then drag directly along the number line past the dotted halfway tick to watch round-to-nearest-even pull it onto the next representable float.
+</TryThis>
 
 In 32-bit floats (`f32`), the exact same cliff arrives at `2^24 = 16,777,216`. Past that coordinate in a game engine, you can no longer nudge a vertex by 1 unit, physics steps snap in visible chunks, and noise functions receive stair-stepped coordinates that tear smooth terrain into jagged walls. Modern engines avoid the cliff either by switching world coordinates to 64-bit doubles (`2^53`) or by quietly recentering the world origin around the player so you never walk far enough from `0` for the ticks to spread apart.

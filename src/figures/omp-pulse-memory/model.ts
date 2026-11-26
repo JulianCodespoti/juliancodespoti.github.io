@@ -17,6 +17,7 @@ export interface WorkerVisual {
   id: number;
   chat: string;
   slot: number;
+  physicalSlot: number; // stable visual bay (0..POOL_CAP-1) so LRU retargets happen IN PLACE
   scale: SpringScalar;
   flash: number; // 0..1 highlight flash when retargeted or reused
 }
@@ -55,12 +56,14 @@ function syncWorkersForStrategy(state: MemoryPoolState) {
       const prev = existingByChat.get(chat);
       if (prev) {
         prev.slot = idx;
+        prev.physicalSlot = idx;
         return prev;
       }
       return {
         id: state.nextId++,
         chat,
         slot: idx,
+        physicalSlot: idx,
         scale: { value: 0.2, velocity: 0 },
         flash: 0.7,
       };
@@ -70,6 +73,7 @@ function syncWorkersForStrategy(state: MemoryPoolState) {
     const kept = state.workers.slice(-POOL_CAP);
     kept.forEach((w, idx) => {
       w.slot = idx;
+      w.physicalSlot = idx;
     });
     state.workers = kept;
   }
@@ -123,18 +127,22 @@ export function replyInPoolChat(state: MemoryPoolState, chat = state.selectedCha
   }
 
   if (state.workers.length < POOL_CAP) {
+    const usedBays = new Set(state.workers.map((w) => w.physicalSlot));
+    let bay = 0;
+    while (usedBays.has(bay)) bay++;
     state.workers.push({
       id: state.nextId++,
       chat,
       slot: state.workers.length,
+      physicalSlot: bay,
       scale: { value: 0.15, velocity: 0 },
       flash: 0.9,
     });
-    state.lastEvent = `Pre-warmed worker slot ${state.workers.length} for "${chat}" as you started typing.`;
+    state.lastEvent = `Pre-warmed worker slot ${bay + 1} for "${chat}" as you started typing.`;
     return;
   }
 
-  // LRU retarget: reuse slot 0 in place (59 ms switch_session) and rotate to back
+  // LRU retarget: reuse oldest worker IN ITS OWN PHYSICAL BAY (59 ms switch_session) and rotate to back of LRU queue
   const reused = state.workers.shift()!;
   const prevChat = reused.chat;
   reused.chat = chat;
@@ -144,7 +152,7 @@ export function replyInPoolChat(state: MemoryPoolState, chat = state.selectedCha
     w.slot = idx;
   });
   state.retargets += 1;
-  state.lastEvent = `Retargeted warm worker from "${prevChat}" to "${chat}" in 59 ms (cap holds at 3).`;
+  state.lastEvent = `Retargeted slot ${reused.physicalSlot + 1} from "${prevChat}" to "${chat}" in 59 ms (cap holds at 3).`;
 }
 
 export function getPoolTotalMb(state: MemoryPoolState): number {
@@ -334,6 +342,9 @@ export function stepDeltaWire(sim: DeltaWireSim, dt: number) {
 
 export type BackpressureMode = "clear" | "latch";
 
+/** Shared normalized X coordinate of the swinging valve along the intake pipe (physics + renderer stay locked). */
+export const GATE_NORM_X = 0.56;
+
 export interface PipeParticle {
   id: number;
   phase: "intake" | "bounce" | "drain";
@@ -438,10 +449,11 @@ export function stepBackpressureSim(sim: BackpressureSim, dt: number) {
     const p = sim.particles[i];
     if (p.phase === "intake") {
       p.x += dt * 2.1;
-      // Hit closed gate at x ~= 0.68
-      if (sim.latched && p.x >= 0.66) {
+      // Hit closed gate face at exact GATE_NORM_X coordinate with subtle physical valve shudder
+      if (sim.latched && p.x >= GATE_NORM_X - 0.05) {
         p.phase = "bounce";
-        p.x = 0.66;
+        p.x = GATE_NORM_X - 0.05;
+        sim.gateAngle.velocity += 75;
         continue;
       }
       if (p.x >= 1) {

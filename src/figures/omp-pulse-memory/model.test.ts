@@ -41,6 +41,10 @@ describe("MemoryPoolModel", () => {
     expect(pool.workers.length).toBe(POOL_CAP);
     expect(pool.retargets).toBe(1);
     expect(pool.workers.map((w) => w.chat)).toEqual([DEMO_CHATS[1], DEMO_CHATS[2], DEMO_CHATS[3]]);
+    // Chat 4 reuses Chat 1's physical bay (slot 0) in place without teleporting Chats 2 & 3
+    expect(pool.workers.find((w) => w.chat === DEMO_CHATS[3])?.physicalSlot).toBe(0);
+    expect(pool.workers.find((w) => w.chat === DEMO_CHATS[1])?.physicalSlot).toBe(1);
+    expect(pool.workers.find((w) => w.chat === DEMO_CHATS[2])?.physicalSlot).toBe(2);
   });
 
   it("spawns one worker per opened chat in eager mode", () => {

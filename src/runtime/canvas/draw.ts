@@ -6,7 +6,7 @@ export function roundRectPath(
   h: number,
   r: number,
 ) {
-  const radius = Math.min(r, w / 2, h / 2);
+  const radius = Math.max(0, Math.min(r, w / 2, h / 2));
   ctx.beginPath();
   ctx.moveTo(x + radius, y);
   ctx.arcTo(x + w, y, x + w, y + h, radius);
@@ -60,6 +60,60 @@ export function drawLabel(
   ctx.textAlign = opts.align ?? "left";
   ctx.textBaseline = opts.baseline ?? "middle";
   ctx.fillText(text, x, y);
+}
+
+export function drawArrowHead(
+  ctx: CanvasRenderingContext2D,
+  x: number,
+  y: number,
+  angle: number,
+  size: number,
+  color: string,
+) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(-size, -size * 0.56);
+  ctx.lineTo(-size * 0.72, 0);
+  ctx.lineTo(-size, size * 0.56);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
+export function drawPillBadge(
+  ctx: CanvasRenderingContext2D,
+  text: string,
+  cx: number,
+  cy: number,
+  opts: {
+    bg: string;
+    stroke: string;
+    color: string;
+    font: string;
+    size?: number;
+    weight?: number;
+    padX?: number;
+    height?: number;
+  },
+) {
+  const size = opts.size ?? 11;
+  const weight = opts.weight ?? 600;
+  const padX = opts.padX ?? 8;
+  const h = opts.height ?? size + 9;
+  ctx.font = `${weight} ${size}px ${opts.font}`;
+  const w = ctx.measureText(text).width + padX * 2;
+  fillRoundRect(ctx, cx - w / 2, cy - h / 2, w, h, h / 2, opts.bg, opts.stroke, 1.1);
+  drawLabel(ctx, text, cx, cy + 0.5, {
+    color: opts.color,
+    font: opts.font,
+    size,
+    weight,
+    align: "center",
+  });
 }
 
 export function drawSparkline(

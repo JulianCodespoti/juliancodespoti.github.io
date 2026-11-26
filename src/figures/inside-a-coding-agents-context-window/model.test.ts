@@ -5,6 +5,7 @@ import {
   createCausalCache,
   editCausalBlock,
   getCausalCacheStats,
+  getSessionSlices,
   SESSION_SLICES,
   SESSION_TOTAL_TOKENS,
   simulateHarness20Turns,
@@ -50,5 +51,16 @@ describe("Context Window Models", () => {
     expect(lean.totalCostUsd).toBeGreaterThan(0.15);
     expect(sloppy.totalCostUsd).toBeGreaterThan(3.0);
     expect(sloppy.totalCostUsd).toBeGreaterThan(lean.totalCostUsd * 12);
+
+    // Per-turn cached + uncached breakdown matches total turn cost exactly
+    for (let i = 0; i < 20; i++) {
+      expect(lean.turnCachedCostsUsd[i] + lean.turnUncachedCostsUsd[i]).toBeCloseTo(lean.turnCostsUsd[i], 10);
+    }
+  });
+
+  it("frees over 18K tokens when capping the uncropped test failure log", () => {
+    const cropped = getSessionSlices(true);
+    const croppedTotal = cropped.reduce((acc, s) => acc + s.tokens, 0);
+    expect(SESSION_TOTAL_TOKENS - croppedTotal).toBeGreaterThan(18_000);
   });
 });

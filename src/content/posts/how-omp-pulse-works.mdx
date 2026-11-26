@@ -47,7 +47,7 @@ Here is <Cue tone="copper">Always spawn</Cue> next to <Cue tone="teal">Lazy pool
 <MemoryGridFigure client:visible />
 
 <TryThis>
-Switch to <code>Lazy pool (max 3)</code>, then tap <code>Reply</code> across Chats 1, 2, 3, and 4. Watch slot 1 smoothly retarget to Chat 4 in 59 ms instead of allocating a fourth 281 MB block.
+Switch from <code>Always spawn</code> to <code>Lazy pool (max 3)</code> to watch 857 MB drop straight down to 14 MB. Then tap <code>Reply</code> across Chats 1, 2, 3, and 4 and watch slot 1 smoothly retarget to Chat 4 in 59 ms instead of allocating a fourth 281 MB block.
 </TryThis>
 
 ## Opening a 44 MB chat in 0.59 ms
@@ -107,7 +107,7 @@ That same 4,228-character turn drops from 244 KB to 25 KB (9.7x smaller). Correc
 <LiveDeltaWireFigure client:visible />
 
 <TryThis>
-Edit the middle of the text box or type an emoji like <code>🚀</code> and then replace it with <code>🎉</code>. Watch the live UTF-16 encoder back off cleanly so it never splits a surrogate pair.
+Tap <code>Swap emoji</code> (or edit the middle of the text box yourself). Watch the live UTF-16 encoder back off cleanly so it never splits a surrogate pair, while the wire inspector shows the exact <code>keep</code> prefix and appended suffix.
 </TryThis>
 
 ## Keeping memory flat when your phone sleeps or loses signal

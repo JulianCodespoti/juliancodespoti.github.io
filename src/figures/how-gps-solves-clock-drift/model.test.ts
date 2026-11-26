@@ -1,11 +1,13 @@
 import { describe, expect, it } from "vitest";
 import {
   circleIntersections,
+  computeCovarianceEllipse2D,
   computeHdop2D,
   dist2D,
   measurePseudoranges,
   SATELLITES,
   solveGps2D,
+  solveGps2DTrace,
   SPEED_OF_LIGHT_M_PER_US,
 } from "./model";
 
@@ -58,5 +60,34 @@ describe("2D GPS Trilateration & Clock-Drift Solver", () => {
     );
     expect(spreadHdop).toBeLessThan(2.0);
     expect(clusteredHdop).toBeGreaterThan(8.0);
+  });
+
+  it("elongates the 2D covariance ellipse when satellites cluster on one side", () => {
+    const receiver = { x: 490, y: 315 };
+    const spread = computeCovarianceEllipse2D(
+      SATELLITES.map((s) => s.pos),
+      receiver,
+    );
+    const clustered = computeCovarianceEllipse2D(
+      [
+        { x: 310, y: 92 },
+        { x: 465, y: 80 },
+        { x: 620, y: 96 },
+      ],
+      receiver,
+    );
+    expect(spread.majorMeters / spread.minorMeters).toBeLessThan(1.6);
+    expect(clustered.majorMeters).toBeGreaterThan(spread.majorMeters * 5);
+    expect(clustered.majorMeters / clustered.minorMeters).toBeGreaterThan(2.5);
+  });
+
+  it("records a converging Gauss-Newton trace from biased initial guess to near-zero residual", () => {
+    const trueReceiver = { x: 485, y: 285 };
+    const pseudoranges = measurePseudoranges(trueReceiver, 0.32);
+    const trace = solveGps2DTrace(pseudoranges, { x: 380, y: 210 });
+    expect(trace.length).toBeGreaterThanOrEqual(3);
+    expect(trace[0].residualMeters).toBeGreaterThan(50);
+    expect(trace[trace.length - 1].residualMeters).toBeLessThan(0.01);
+    expect(dist2D(trace[trace.length - 1].pos, trueReceiver)).toBeLessThan(0.01);
   });
 });

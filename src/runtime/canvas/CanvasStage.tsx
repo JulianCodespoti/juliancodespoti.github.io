@@ -1,4 +1,4 @@
-import { useEffect, useRef, type PointerEvent } from "react";
+import { useEffect, useRef, useState, type PointerEvent } from "react";
 import { useThemePalette, type ThemePalette } from "../theme";
 import { useVisibility } from "../visibility";
 
@@ -17,6 +17,13 @@ export interface CanvasPointer {
   y: number;
   width: number;
   height: number;
+  pointerType: string;
+}
+
+export type CanvasHeight = number | ((width: number) => number);
+
+function resolveHeight(height: CanvasHeight, width: number): number {
+  return typeof height === "function" ? Math.round(height(width)) : height;
 }
 
 export function CanvasStage({
@@ -26,18 +33,20 @@ export function CanvasStage({
   cursor,
   touchAction = "manipulation",
   framed = true,
+  onVisibleChange,
   onFrame,
   onPointerDown,
   onPointerMove,
   onPointerUp,
   onPointerLeave,
 }: {
-  height: number;
+  height: CanvasHeight;
   label: string;
   running?: boolean;
   cursor?: string;
-  touchAction?: "manipulation" | "none";
+  touchAction?: "manipulation" | "none" | "pan-y";
   framed?: boolean;
+  onVisibleChange?: (visible: boolean) => void;
   onFrame: (frame: CanvasFrame) => void;
   onPointerDown?: (p: CanvasPointer) => void;
   onPointerMove?: (p: CanvasPointer) => void;
@@ -46,17 +55,48 @@ export function CanvasStage({
 }) {
   const { ref: wrapRef, visible, reducedMotion } = useVisibility();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const sizeRef = useRef({ width: 640, height });
+  const initialH = resolveHeight(height, 640);
+  const [boxHeight, setBoxHeight] = useState(initialH);
+  const sizeRef = useRef({ width: 640, height: initialH });
+  const elapsedRef = useRef(0);
   const theme = useThemePalette();
 
   const onFrameRef = useRef(onFrame);
   onFrameRef.current = onFrame;
+
+  const heightRef = useRef(height);
+  heightRef.current = height;
 
   const themeRef = useRef(theme);
   themeRef.current = theme;
 
   const reducedRef = useRef(reducedMotion);
   reducedRef.current = reducedMotion;
+
+  const onVisibleRef = useRef(onVisibleChange);
+  onVisibleRef.current = onVisibleChange;
+
+  useEffect(() => {
+    onVisibleRef.current?.(visible);
+  }, [visible]);
+
+  const drawSingleFrame = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    onFrameRef.current({
+      ctx,
+      width: sizeRef.current.width,
+      height: sizeRef.current.height,
+      dt: 0,
+      elapsed: elapsedRef.current,
+      theme: themeRef.current,
+      reducedMotion: reducedRef.current,
+    });
+  };
 
   useEffect(() => {
     const wrap = wrapRef.current;
@@ -65,33 +105,35 @@ export function CanvasStage({
 
     const resize = () => {
       const rect = wrap.getBoundingClientRect();
-      const w = Math.max(240, Math.round(rect.width));
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
-      sizeRef.current = { width: w, height };
+      const w = Math.max(140, Math.round(rect.width));
+      const h = resolveHeight(heightRef.current, w);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+      sizeRef.current = { width: w, height: h };
+      setBoxHeight((prev) => (prev === h ? prev : h));
       canvas.width = Math.round(w * dpr);
-      canvas.height = Math.round(height * dpr);
+      canvas.height = Math.round(h * dpr);
       canvas.style.width = `${w}px`;
-      canvas.style.height = `${height}px`;
-      const ctx = canvas.getContext("2d");
-      if (ctx) {
-        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-        onFrameRef.current({
-          ctx,
-          width: w,
-          height,
-          dt: 0,
-          elapsed: 0,
-          theme: themeRef.current,
-          reducedMotion: reducedRef.current,
-        });
-      }
+      canvas.style.height = `${h}px`;
+      drawSingleFrame();
     };
 
     resize();
     const ro = new ResizeObserver(resize);
     ro.observe(wrap);
-    return () => ro.disconnect();
-  }, [height, wrapRef]);
+
+    // Re-render crisply once webfonts (IBM Plex Sans / Mono) finish loading
+    let cancelled = false;
+    if (typeof document !== "undefined" && document.fonts?.ready) {
+      document.fonts.ready.then(() => {
+        if (!cancelled) drawSingleFrame();
+      });
+    }
+
+    return () => {
+      cancelled = true;
+      ro.disconnect();
+    };
+  }, [wrapRef]);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -101,21 +143,22 @@ export function CanvasStage({
 
     let raf = 0;
     let last = performance.now();
-    let elapsed = 0;
 
     const tick = (now: number) => {
       const dt = Math.min(0.05, Math.max(0, (now - last) / 1000));
       last = now;
-      elapsed += dt;
+      if (!reducedRef.current) {
+        elapsedRef.current += dt;
+      }
 
-      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       onFrameRef.current({
         ctx,
         width: sizeRef.current.width,
         height: sizeRef.current.height,
         dt: reducedRef.current ? 0 : dt,
-        elapsed,
+        elapsed: elapsedRef.current,
         theme: themeRef.current,
         reducedMotion: reducedRef.current,
       });
@@ -125,7 +168,6 @@ export function CanvasStage({
       }
     };
 
-    // Always render at least once on state/theme change
     raf = window.requestAnimationFrame(tick);
     return () => window.cancelAnimationFrame(raf);
   }, [visible, running, theme]);
@@ -133,21 +175,7 @@ export function CanvasStage({
   // Immediately redraw reactive (running={false}) canvases whenever parent state updates onFrame
   useEffect(() => {
     if (running) return;
-    const canvas = canvasRef.current;
-    if (!canvas) return;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    onFrameRef.current({
-      ctx,
-      width: sizeRef.current.width,
-      height: sizeRef.current.height,
-      dt: 0,
-      elapsed: 0,
-      theme: themeRef.current,
-      reducedMotion: reducedRef.current,
-    });
+    drawSingleFrame();
   }, [running, onFrame, theme]);
 
   const toPointer = (e: PointerEvent<HTMLCanvasElement>): CanvasPointer => {
@@ -157,6 +185,7 @@ export function CanvasStage({
       y: e.clientY - rect.top,
       width: sizeRef.current.width,
       height: sizeRef.current.height,
+      pointerType: e.pointerType || "mouse",
     };
   };
 
@@ -164,13 +193,16 @@ export function CanvasStage({
     <div
       ref={wrapRef}
       className={framed ? "canvas-stage canvas-stage--framed" : "canvas-stage"}
-      style={{ height: `${height}px` }}
+      style={{ height: `${boxHeight}px` }}
     >
       <canvas
         ref={canvasRef}
         role="img"
         aria-label={label}
         style={{ display: "block", cursor: cursor ?? "default", touchAction }}
+        onContextMenu={(e) => {
+          if (touchAction === "none") e.preventDefault();
+        }}
         onPointerDown={
           onPointerDown
             ? (e) => {

@@ -7,6 +7,7 @@ import "@fontsource/ibm-plex-sans/400.css";
 import "@fontsource/ibm-plex-sans/500.css";
 import "@fontsource/ibm-plex-sans/600.css";
 import "@fontsource/ibm-plex-mono/400.css";
+import "@fontsource/ibm-plex-mono/500.css";
 import "../styles/global.css";
 import { SITE } from "../site.config";
 
@@ -38,9 +39,10 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.siteUrl);
 <html lang="en" data-theme="dark">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>{title}</title>
     <meta name="description" content={description} />
+    <meta name="theme-color" content="#0e1013" id="meta-theme-color" />
     <link rel="canonical" href={canonicalUrl} />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="alternate" type="application/rss+xml" title={SITE.brand} href="/rss.xml" />
@@ -69,11 +71,15 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.siteUrl);
       (() => {
         try {
           const saved = localStorage.getItem("spoti-theme");
+          let theme = "dark";
           if (saved === "light" || saved === "dark") {
-            document.documentElement.dataset.theme = saved;
+            theme = saved;
           } else if (window.matchMedia && window.matchMedia("(prefers-color-scheme: light)").matches) {
-            document.documentElement.dataset.theme = "light";
+            theme = "light";
           }
+          document.documentElement.dataset.theme = theme;
+          const meta = document.getElementById("meta-theme-color");
+          if (meta) meta.setAttribute("content", theme === "light" ? "#f6f4ef" : "#0e1013");
         } catch {}
       })();
     </script>
@@ -111,11 +117,13 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.siteUrl);
       </div>
     </header>
 
-    <slot />
+    <div class="site-body">
+      <slot />
+    </div>
 
     <footer class="site-footer">
       <div class="site-footer-inner">
-        <span class="footer-brand">{SITE.brand} <span class="footer-sep">·</span> <span class="footer-note">Built with Astro &amp; hand-drawn canvas</span></span>
+        <span class="footer-brand">{SITE.brand} <span class="footer-sep">·</span> <span class="footer-note">Static Astro &amp; hand-drawn canvas</span></span>
         <div class="footer-links">
           <a href="/">Posts</a>
           <a href="/about/">About</a>
@@ -128,8 +136,10 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.siteUrl);
     <script is:inline>
       (() => {
         const btn = document.getElementById("theme-toggle");
+        const meta = document.getElementById("meta-theme-color");
         const sync = () => {
           const isLight = document.documentElement.dataset.theme === "light";
+          if (meta) meta.setAttribute("content", isLight ? "#f6f4ef" : "#0e1013");
           if (btn) {
             btn.setAttribute("aria-label", isLight ? "Switch to dark theme" : "Switch to light theme");
             btn.setAttribute("aria-pressed", String(isLight));
@@ -137,10 +147,17 @@ const ogImageUrl = new URL(ogImage, Astro.site ?? SITE.siteUrl);
           }
         };
         const toggle = () => {
-          const next = document.documentElement.dataset.theme === "light" ? "dark" : "light";
-          document.documentElement.dataset.theme = next;
+          const root = document.documentElement;
+          root.classList.add("theme-switching");
+          const next = root.dataset.theme === "light" ? "dark" : "light";
+          root.dataset.theme = next;
           try { localStorage.setItem("spoti-theme", next); } catch {}
           sync();
+          window.requestAnimationFrame(() => {
+            window.requestAnimationFrame(() => {
+              root.classList.remove("theme-switching");
+            });
+          });
         };
         btn?.addEventListener("click", toggle);
         window.addEventListener("keydown", (e) => {

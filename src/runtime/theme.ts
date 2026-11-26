@@ -12,34 +12,42 @@ export interface ThemePalette {
   dim: string;
   copper: string;
   copperBg: string;
+  copperLine: string;
   teal: string;
   tealBg: string;
+  tealLine: string;
   sage: string;
   sageBg: string;
+  sageLine: string;
   crimson: string;
   crimsonBg: string;
+  crimsonLine: string;
   fontSans: string;
   fontMono: string;
 }
 
 const DARK_FALLBACK: ThemePalette = {
   mode: "dark",
-  bg: "#111214",
-  surface: "#17191c",
-  surfaceSub: "#1e2126",
-  line: "#2a2e36",
-  lineStrong: "#3e4451",
-  ink: "#e7e9ee",
-  muted: "#98a0ae",
-  dim: "#666e7c",
-  copper: "#df7a47",
-  copperBg: "rgba(223, 122, 71, 0.16)",
-  teal: "#34a8a3",
-  tealBg: "rgba(52, 168, 163, 0.16)",
-  sage: "#48b07b",
-  sageBg: "rgba(72, 176, 123, 0.16)",
-  crimson: "#e05656",
-  crimsonBg: "rgba(224, 86, 86, 0.16)",
+  bg: "#0e1013",
+  surface: "#15181d",
+  surfaceSub: "#1c2027",
+  line: "#272c36",
+  lineStrong: "#434b5c",
+  ink: "#eef0f4",
+  muted: "#a4adba",
+  dim: "#818b9b",
+  copper: "#e6824e",
+  copperBg: "rgba(230, 130, 78, 0.16)",
+  copperLine: "rgba(230, 130, 78, 0.56)",
+  teal: "#3fb8b2",
+  tealBg: "rgba(63, 184, 178, 0.16)",
+  tealLine: "rgba(63, 184, 178, 0.54)",
+  sage: "#52bd85",
+  sageBg: "rgba(82, 189, 133, 0.16)",
+  sageLine: "rgba(82, 189, 133, 0.54)",
+  crimson: "#eb6666",
+  crimsonBg: "rgba(235, 102, 102, 0.17)",
+  crimsonLine: "rgba(235, 102, 102, 0.58)",
   fontSans: '"IBM Plex Sans", -apple-system, BlinkMacSystemFont, sans-serif',
   fontMono: '"IBM Plex Mono", ui-monospace, monospace',
 };
@@ -62,12 +70,16 @@ export function readThemePalette(): ThemePalette {
     dim: v("--fg-dim", DARK_FALLBACK.dim),
     copper: v("--copper", DARK_FALLBACK.copper),
     copperBg: v("--copper-bg", DARK_FALLBACK.copperBg),
+    copperLine: v("--copper-line", DARK_FALLBACK.copperLine),
     teal: v("--teal", DARK_FALLBACK.teal),
     tealBg: v("--teal-bg", DARK_FALLBACK.tealBg),
+    tealLine: v("--teal-line", DARK_FALLBACK.tealLine),
     sage: v("--sage", DARK_FALLBACK.sage),
     sageBg: v("--sage-bg", DARK_FALLBACK.sageBg),
+    sageLine: v("--sage-line", DARK_FALLBACK.sageLine),
     crimson: v("--crimson", DARK_FALLBACK.crimson),
     crimsonBg: v("--crimson-bg", DARK_FALLBACK.crimsonBg),
+    crimsonLine: v("--crimson-line", DARK_FALLBACK.crimsonLine),
     fontSans: v("--font-sans", DARK_FALLBACK.fontSans),
     fontMono: v("--font-mono", DARK_FALLBACK.fontMono),
   };
